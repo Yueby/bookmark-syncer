@@ -8,6 +8,12 @@
 
 一个隐私优先的跨浏览器书签同步工具，基于 WebDAV 协议，数据完全由你掌控。
 
+### 📸 预览
+
+|              深色模式               |               浅色模式               |
+| :---------------------------------: | :----------------------------------: |
+| ![深色模式](./screenshots/dark.png) | ![浅色模式](./screenshots/light.png) |
+
 ### ✨ 特性
 
 - 🔒 **隐私优先** - 使用你自己的 WebDAV 服务器，无第三方数据存储
@@ -62,6 +68,12 @@ pnpm build
 ## English
 
 A privacy-first cross-browser bookmark sync tool using WebDAV protocol. Your data, your control.
+
+### 📸 Preview
+
+|              Dark Mode               |               Light Mode               |
+| :----------------------------------: | :------------------------------------: |
+| ![Dark Mode](./screenshots/dark.png) | ![Light Mode](./screenshots/light.png) |
 
 ### ✨ Features
 
