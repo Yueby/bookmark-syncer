@@ -100,3 +100,4 @@ dist
 
 # Mac OS
 .DS_Store
+*.zip
