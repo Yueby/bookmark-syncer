@@ -70,22 +70,13 @@ jobs:
           cd apps/firefox-extension/dist
           zip -r ../../../bookmark-syncer-firefox-v$VERSION.zip .
 
-      - name: Generate Changelog
-        if: steps.check_tag.outputs.exists == 'false'
-        id: changelog
-        uses: TriPSs/conventional-changelog-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version-file: "./package.json"
-          output-file: "false"
-
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          body: ${{ steps.changelog.outputs.clean_changelog }}
+          generate_release_notes: true
           files: |
             bookmark-syncer-chrome-v${{ steps.version.outputs.version }}.zip
             bookmark-syncer-firefox-v${{ steps.version.outputs.version }}.zip
