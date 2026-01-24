@@ -10,7 +10,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0",
   "packageManager": "pnpm@10.26.2",
   "devDependencies": {
     "@types/node": "^25.0.10"

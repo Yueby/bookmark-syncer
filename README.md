@@ -71,4 +71,4 @@ pnpm build
 
 ### 📄 License
 
-[CC BY-NC-SA 4.0](./LICENSE) - Non-commercial use only
+[GNU AGPLv3](./LICENSE) - Open Source
