@@ -1,18 +1,15 @@
-name: Release
+name: Build Release Assets
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag_name:
-        description: "Tag name (optional, defaults to package.json version)"
-        required: false
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and Release
+  build-and-upload:
+    name: Build and Upload Assets
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -34,58 +31,33 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Read Version
+      - name: Get Version from Tag
         id: version
+        shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          # Extract version from tag (remove 'v' prefix)
+          VERSION=${GITHUB_REF_NAME#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Detected version: $VERSION"
-
-      - name: Check if tag exists
-        id: check_tag
-        run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists. Skipping release."
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          echo "Detected version from tag: $VERSION"
 
       - name: Build Extensions
-        if: steps.check_tag.outputs.exists == 'false'
         run: pnpm build
 
       - name: Package Chrome Extension
-        if: steps.check_tag.outputs.exists == 'false'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           cd apps/chrome-extension/dist
           zip -r ../../../bookmark-syncer-chrome-v$VERSION.zip .
 
       - name: Package Firefox Extension
-        if: steps.check_tag.outputs.exists == 'false'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           cd apps/firefox-extension/dist
           zip -r ../../../bookmark-syncer-firefox-v$VERSION.zip .
 
-      - name: Generate Changelog
-        if: steps.check_tag.outputs.exists == 'false'
-        id: changelog
-        uses: TriPSs/conventional-changelog-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version-file: "./package.json"
-          output-file: "false"
-
-      - name: Create Release
-        if: steps.check_tag.outputs.exists == 'false'
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
-          body: ${{ steps.changelog.outputs.clean_changelog }}
           files: |
             bookmark-syncer-chrome-v${{ steps.version.outputs.version }}.zip
             bookmark-syncer-firefox-v${{ steps.version.outputs.version }}.zip

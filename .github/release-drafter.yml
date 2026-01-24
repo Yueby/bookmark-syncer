@@ -1,0 +1,30 @@
+name-template: "v$NEXT_PATCH_VERSION"
+tag-template: "v$NEXT_PATCH_VERSION"
+categories:
+  - title: "✨ New Features"
+    labels:
+      - "feature"
+      - "feat"
+      - "enhancement"
+  - title: "🐞 Bug Fixes"
+    labels:
+      - "fix"
+      - "bug"
+  - title: "🚀 Performance"
+    labels:
+      - "perf"
+      - "performance"
+  - title: "📚 Documentation"
+    labels:
+      - "docs"
+      - "documentation"
+  - title: "🧰 Maintenance"
+    labels:
+      - "chore"
+      - "refactor"
+      - "test"
+      - "ci"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+template: |
+  ## Changes
+  $CHANGES
