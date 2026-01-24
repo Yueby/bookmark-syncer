@@ -1,7 +1,7 @@
 {
   "name": "bookmark-syncer",
   "version": "1.0.0",
-  "description": "基于 WebDAV 的现代化跨设备书签同步工具",
+  "description": "A privacy-first bookmark sync extension based on WebDAV. Supports Chrome, Firefox, and Edge.",
   "private": true,
   "scripts": {
     "build": "pnpm build:chrome && pnpm build:firefox",

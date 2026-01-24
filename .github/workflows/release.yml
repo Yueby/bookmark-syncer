@@ -2,8 +2,10 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - master
+    paths:
+      - "package.json"
 
 permissions:
   contents: write
@@ -28,23 +30,49 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Read Version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Skipping release."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build Extensions
+        if: steps.check_tag.outputs.exists == 'false'
         run: pnpm build
 
       - name: Package Chrome Extension
+        if: steps.check_tag.outputs.exists == 'false'
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
           cd apps/chrome-extension/dist
-          zip -r ../../../bookmark-syncer-chrome-${{ github.ref_name }}.zip .
+          zip -r ../../../bookmark-syncer-chrome-v$VERSION.zip .
 
       - name: Package Firefox Extension
+        if: steps.check_tag.outputs.exists == 'false'
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
           cd apps/firefox-extension/dist
-          zip -r ../../../bookmark-syncer-firefox-${{ github.ref_name }}.zip .
+          zip -r ../../../bookmark-syncer-firefox-v$VERSION.zip .
 
       - name: Create Release
+        if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
           files: |
-            bookmark-syncer-chrome-${{ github.ref_name }}.zip
-            bookmark-syncer-firefox-${{ github.ref_name }}.zip
+            bookmark-syncer-chrome-v${{ steps.version.outputs.version }}.zip
+            bookmark-syncer-firefox-v${{ steps.version.outputs.version }}.zip
           generate_release_notes: true
