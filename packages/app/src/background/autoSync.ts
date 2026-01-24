@@ -7,16 +7,14 @@ import browser from "webextension-polyfill";
 import { smartPush, smartPull, SyncConfig } from "../services/syncService";
 
 // 防抖定时器
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
 // 状态标志
 let isRestoring = false; // 是否正在执行恢复操作（防止死循环）
 const LOCK_HOLDER_AUTO = "auto_sync"; // 自动同步的锁持有者标识
 
-// 监听器引用（用于移除）
-let listeners: (() => void)[] = [];
-
 const ALARM_NAME = "scheduledSync";
+
+// 防抖定时器 Alarm 名称
+const DEBOUNCE_ALARM = "autoSyncDebounce";
 
 /**
  * 获取 WebDAV 配置
