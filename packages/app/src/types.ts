@@ -10,7 +10,8 @@ export interface BookmarkMetadata {
 }
 
 export interface BookmarkNode {
-  id: string;
+  id?: string; // 浏览器原生 ID（仅本地/系统文件夹使用，云端数据可能没有）
+  hash?: string; // 内容哈希（用于跨浏览器同步）= sha256(url + "|" + title)
   parentId?: string;
   index?: number;
   url?: string;

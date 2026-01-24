@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 
-import { Button } from './Button'
-import { cn } from '../lib/utils'
-import { Cloud, RefreshCw, AlertTriangle, History, ShieldCheck, RotateCcw, Trash2, WifiOff } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { AlertTriangle, Cloud, History, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
 import { useStorage } from '../hooks/useStorage'
-import { BookmarkService } from '../services/bookmarkService'
+import { cn } from '../lib/utils'
 import { BackupService, Snapshot } from '../services/backupService'
+import { BookmarkService } from '../services/bookmarkService'
+import { smartPull, smartPush, smartSync } from '../services/syncService'
 import { createWebDAVClient } from '../services/webdav'
-import { smartSync, smartPush, smartPull } from '../services/syncService'
-import { StatsCard } from './StatsCard'
-import { Drawer } from './Drawer'
 import { CloudBackup } from '../types'
+import { Button } from './Button'
+import { Drawer } from './Drawer'
+import { StatsCard } from './StatsCard'
 
 import { toast } from 'sonner'
 
@@ -38,7 +38,6 @@ export function SyncView() {
   const [cloudCount, setCloudCount] = useState(0)
   const [cloudMeta, setCloudMeta] = useState<{ time: number, device: string, count: number, browser?: string } | null>(null)
 
-  
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'checking' | 'syncing' | 'success' | 'error'>('idle')
   const [msg, setMsg] = useState('')
@@ -202,9 +201,13 @@ export function SyncView() {
 
   const executePush = async () => {
       setSyncStatus('syncing')
-      setMsg('正在上传...')
+      setMsg('正在准备上传...')
       try {
-          const result = await smartPush(getSyncConfig(), 'manual', false)
+          // UI 层负责创建快照（可选）
+          // 由于上传不会覆盖本地数据，所以可以跳过快照
+          
+          setMsg('正在上传...')
+          const result = await smartPush(getSyncConfig(), 'manual')
           
           if (result.success) {
               setSyncStatus('success')
@@ -230,8 +233,14 @@ export function SyncView() {
 
   const executePull = async (mode: 'overwrite' | 'merge') => {
       setSyncStatus('syncing') 
-      setMsg(mode === 'overwrite' ? '覆盖恢复中...' : '正在增量合并...')
+      setMsg('正在创建快照...')
       try {
+          // UI 层负责在同步前创建快照
+          const currentTree = await BookmarkService.getTree()
+          const currentCount = BookmarkService.countBookmarks(currentTree)
+          await BackupService.createSnapshot(currentTree, currentCount, '恢复前自动备份')
+          
+          setMsg(mode === 'overwrite' ? '覆盖恢复中...' : '正在增量合并...')
           const result = await smartPull(getSyncConfig(), 'manual', mode)
           
           if (result.success) {
@@ -407,7 +416,6 @@ export function SyncView() {
         ) : drawerMode === 'conflict' ? (
             <div className="space-y-4 pt-2">
                 {/* 跨浏览器警告 */}
-
 
                 <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-400 dark:border-amber-500/20 p-4 rounded-xl flex gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />

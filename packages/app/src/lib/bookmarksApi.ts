@@ -40,7 +40,7 @@ export const BookmarksAPI = {
    */
   update(
     id: string,
-    changes: { title?: string; url?: string },
+    changes: browser.Bookmarks.UpdateChangesType,
   ): Promise<browser.Bookmarks.BookmarkTreeNode> {
     return browser.bookmarks.update(id, changes);
   },
@@ -50,5 +50,15 @@ export const BookmarksAPI = {
    */
   remove(id: string): Promise<void> {
     return browser.bookmarks.remove(id);
+  },
+
+  /**
+   * 移动书签/文件夹
+   */
+  move(
+    id: string,
+    destination: browser.Bookmarks.MoveDestinationType,
+  ): Promise<browser.Bookmarks.BookmarkTreeNode> {
+    return browser.bookmarks.move(id, destination);
   },
 };
