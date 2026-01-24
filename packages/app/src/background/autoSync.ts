@@ -196,11 +196,6 @@ export async function startScheduledSync() {
   await browser.alarms.create(ALARM_NAME, {
     periodInMinutes: scheduledSyncInterval,
   });
-
-  // 注册监听器 (防止重复注册)
-  if (!browser.alarms.onAlarm.hasListener(handleAlarm)) {
-    browser.alarms.onAlarm.addListener(handleAlarm);
-  }
 }
 
 /**
@@ -215,6 +210,11 @@ export async function stopScheduledSync() {
  */
 async function handleAlarm(alarm: browser.Alarms.Alarm) {
   if (alarm.name !== ALARM_NAME) return;
+
+  // 再次检查开关状态，确保即使用户关闭了开关但 Alarm 还没清除时也不会运行
+  const { scheduledSyncEnabled } = await getWebDAVConfig();
+  if (!scheduledSyncEnabled) return;
+
   await executeAutoPull();
 }
 
@@ -229,10 +229,10 @@ export async function updateScheduledSync() {
     await browser.alarms.create(ALARM_NAME, {
       periodInMinutes: scheduledSyncInterval,
     });
-    if (!browser.alarms.onAlarm.hasListener(handleAlarm)) {
-      browser.alarms.onAlarm.addListener(handleAlarm);
-    }
   } else {
     await browser.alarms.clear(ALARM_NAME);
   }
 }
+
+// 注册监听器 (必须在顶级作用域注册，以确保 Service Worker 唤醒时能立即响应)
+browser.alarms.onAlarm.addListener(handleAlarm);
