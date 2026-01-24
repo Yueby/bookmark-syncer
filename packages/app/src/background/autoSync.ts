@@ -8,7 +8,6 @@ import { smartPush, smartPull, SyncConfig } from "../services/syncService";
 
 // 防抖定时器
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-const DEBOUNCE_DELAY = 3000; // 3 秒防抖
 
 // 状态标志
 let isRestoring = false; // 是否正在执行恢复操作（防止死循环）
@@ -117,8 +116,6 @@ async function executeAutoPull() {
 }
 
 // 防抖定时器 Alarm 名称
-const DEBOUNCE_ALARM = "autoSyncDebounce";
-const DEBOUNCE_DELAY_MIN = 0.05; // 3秒约等于 0.05 分钟 (WebExtension Alarms 最小精度有限，但在 Chrome 中设置 when 可以精确到毫秒)
 
 /**
  * 触发防抖同步 (使用 Alarm 以防止 Service Worker 休眠导致 Timer 丢失)
@@ -182,19 +179,6 @@ browser.alarms.onAlarm.addListener((alarm) => {
   // 注意：scheduledSync 的 handleAlarm 在下面注册，或者我们需要合并监听器？
   // 由于 browser.alarms.onAlarm 可以有多个监听器，这里分开写没问题。
 });
-
-/**
- * 停止自动同步监听
- */
-export function stopAutoSync() {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-
-  listeners.forEach((remove) => remove());
-  listeners = [];
-}
 
 /**
  * 扩展启动时检查云端更新
