@@ -1,6 +1,7 @@
 import { defineManifest } from "@crxjs/vite-plugin";
 
-const version = "0.0.1";
+// @ts-ignore
+import { version } from "../../package.json";
 
 const manifest = defineManifest({
   manifest_version: 3,

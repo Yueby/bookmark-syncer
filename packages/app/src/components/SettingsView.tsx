@@ -185,16 +185,16 @@ function SyncSettingsPage({ onBack }: { onBack: () => void }) {
 
 // 顶部引入 semver
 import semver from 'semver'
-// ... (existing imports)
+import browser from 'webextension-polyfill'
+// ...
 
-// ... (inside AboutPage component)
+// ...
 function AboutPage({ onBack }: { onBack: () => void }) {
   const [checking, setChecking] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null)
   
-  // 获取当前版本 (从 package.json 或者 manifest 获取，这里暂时硬编码或者通过 props 传入)
-  // 注意：实际项目中建议通过构建工具注入版本号，或者从 manifest 读取
-  const currentVersion = '1.0.0' 
+  // 获取当前版本
+  const currentVersion = browser.runtime.getManifest().version 
 
   const checkUpdate = async () => {
     setChecking(true)
