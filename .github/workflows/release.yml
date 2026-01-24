@@ -2,11 +2,10 @@ name: Release
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-    paths:
-      - "package.json"
+    inputs:
+      tag_name:
+        description: "Tag name (optional, defaults to package.json version)"
+        required: false
 
 permissions:
   contents: write
