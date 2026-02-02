@@ -13,6 +13,7 @@
     "framer-motion": "^12.0.0",
     "idb": "^8.0.0",
     "lucide-react": "^0.300.0",
+    "semver": "^7.6.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.0.0",
     "webextension-polyfill": "^0.12.0"

@@ -1,6 +1,6 @@
 {
   "name": "bookmark-syncer",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A privacy-first bookmark sync extension based on WebDAV. Supports Chrome, Firefox, and Edge.",
   "private": true,
   "scripts": {
