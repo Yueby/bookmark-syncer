@@ -29,6 +29,13 @@ export const BrowserBookmarksAPI = {
   },
 
   /**
+   * 获取指定ID的书签或文件夹信息
+   */
+  async get(id: string): Promise<BookmarkTreeNode[]> {
+    return browser.bookmarks.get(id);
+  },
+
+  /**
    * 创建书签或文件夹
    */
   async create(details: CreateDetails): Promise<BookmarkTreeNode> {

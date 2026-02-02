@@ -7,10 +7,10 @@ import { generateHash } from "../../infrastructure/utils/crypto";
 import type { BookmarkNode } from "../../types";
 import { isSystemRootFolder, normalizeUrl } from "./normalizer";
 import type {
-    BookmarkLocation,
-    FolderLocation,
-    GlobalIndex,
-    NodeLocation,
+  BookmarkLocation,
+  FolderLocation,
+  GlobalIndex,
+  NodeLocation,
 } from "./types";
 
 /**
@@ -333,10 +333,19 @@ export async function smartSync(
             });
             stats.bookmarksMoved++;
           } catch (error) {
-            console.warn(
-              `[Merger] Failed to move bookmark ${matchedLocal.id}:`,
-              error,
-            );
+            const errorMsg = (error as Error).message || '';
+            // 书签ID不存在是正常情况（可能被其他文件夹处理过）
+            if (errorMsg.includes("Can't find bookmark")) {
+              console.log(
+                `[Merger] Bookmark ${matchedLocal.id} already processed, skipping move`,
+              );
+            } else {
+              // 其他错误才需要警告
+              console.warn(
+                `[Merger] Failed to move bookmark ${matchedLocal.id}:`,
+                error,
+              );
+            }
           }
         }
       } else {
@@ -418,10 +427,19 @@ export async function smartSync(
             });
             stats.foldersMoved++;
           } catch (error) {
-            console.warn(
-              `[Merger] Failed to move folder ${matchedFolder.id}:`,
-              error,
-            );
+            const errorMsg = (error as Error).message || '';
+            // 文件夹ID不存在是正常情况（可能被其他文件夹处理过）
+            if (errorMsg.includes("Can't find bookmark")) {
+              console.log(
+                `[Merger] Folder ${matchedFolder.id} already processed, skipping move`,
+              );
+            } else {
+              // 其他错误才需要警告
+              console.warn(
+                `[Merger] Failed to move folder ${matchedFolder.id}:`,
+                error,
+              );
+            }
           }
         }
 
@@ -475,11 +493,21 @@ export async function smartSync(
       await removeMethod;
       stats.itemsDeleted++;
     } catch (error) {
+      const errorMsg = (error as Error).message || '';
       const nodeType = localNode.url ? "bookmark" : "folder";
-      console.warn(
-        `[Merger] Failed to delete ${nodeType} ${localNode.id}:`,
-        error,
-      );
+      
+      // 节点已被删除是正常情况（可能被其他操作处理过）
+      if (errorMsg.includes("Can't find bookmark")) {
+        console.log(
+          `[Merger] ${nodeType} ${localNode.id} already deleted, skipping`,
+        );
+      } else {
+        // 其他错误才需要警告
+        console.warn(
+          `[Merger] Failed to delete ${nodeType} ${localNode.id}:`,
+          error,
+        );
+      }
     }
   }
 
