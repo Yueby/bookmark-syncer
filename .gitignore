@@ -100,4 +100,9 @@ dist
 
 # Mac OS
 .DS_Store
-*.zip
+
+# Extension build artifacts
+apps/chrome-extension/*.zip
+apps/chrome-extension/web-ext-artifacts/
+apps/firefox-extension/*.xpi
+apps/firefox-extension/web-ext-artifacts/

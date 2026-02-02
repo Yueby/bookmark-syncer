@@ -54,10 +54,15 @@
 
 #### Firefox
 
-1. 下载最新版本的 `firefox-extension.zip`
-2. 打开 `about:debugging#/runtime/this-firefox`
-3. 点击「临时载入附加组件」
-4. 选择 zip 文件
+1. 下载最新版本的 `bookmark-syncer-firefox-vX.X.X.xpi`（已签名）
+2. 拖拽 `.xpi` 文件到 Firefox 窗口
+3. 点击「添加」按钮确认安装
+
+**或手动安装：**
+1. 打开 `about:addons`
+2. 点击右上角齿轮图标 ⚙️
+3. 选择「从文件安装附加组件」
+4. 选择 `.xpi` 文件
 
 ### ⚙️ 使用方法
 
@@ -67,19 +72,111 @@
 4. 点击「保存并测试连接」
 5. 返回主页点击「同步」按钮
 
-### 🛠️ 开发
+### 🛠️ 开发与构建
 
 ```bash
 # 安装依赖
 pnpm install
 
-# 开发模式
-pnpm dev:chrome   # Chrome 扩展
-pnpm dev:firefox  # Firefox 扩展
+# 开发模式（热重载）
+pnpm dev:chrome   # Chrome 扩展开发
+pnpm dev:firefox  # Firefox 扩展开发
 
-# 构建
+# 构建生产版本
 pnpm build
+
+# 打包分发（自动签名 Firefox，打包 Chrome）
+pnpm package
 ```
+
+### 📦 分发扩展
+
+#### 方式 1：GitHub Actions 自动化（推荐）
+
+配置 GitHub Secrets 后，每次发布自动构建和签名。
+
+**一次性配置：**
+
+1. 访问 [AMO API Key](https://addons.mozilla.org/developers/addon/api/key/) 获取 Firefox 签名凭证
+2. 在 GitHub 仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+3. 添加两个 Secret：
+
+| Secret 名称 | 值（示例） | 说明 |
+|------------|-----------|------|
+| `FIREFOX_WEB_EXT_API_KEY` | `user:12345678:123` | AMO 的 JWT 签发者 |
+| `FIREFOX_WEB_EXT_API_SECRET` | `abc123def456...` | AMO 的 JWT 私钥（很长） |
+
+> 💡 **扩展性提示**：将来如需添加 Chrome Web Store 自动发布，可添加 `CHROME_*` 开头的 Secrets
+
+**发布流程：**
+
+```bash
+# 1. 更新版本号
+# 编辑 package.json 中的 version
+
+# 2. 提交并推送
+git add .
+git commit -m "chore: bump version to 1.0.5"
+git push
+
+# 3. 在 GitHub 创建 Release
+# 访问仓库 → Releases → Draft a new release
+# 输入 tag: v1.0.5，点击 Publish release
+
+# 🤖 GitHub Actions 会自动：
+# - 构建 Chrome 扩展
+# - 签名 Firefox 扩展
+# - 上传到 Release
+```
+
+#### 方式 2：本地手动打包
+
+如果不想用 GitHub Actions，可以本地打包。
+
+**一次性配置（Firefox 签名）：**
+
+1. 访问 [AMO API Key](https://addons.mozilla.org/developers/addon/api/key/)
+2. 点击"生成新的凭据"，获取凭证
+3. 配置环境变量：
+
+```powershell
+# Windows PowerShell
+$env:WEB_EXT_API_KEY = "user:12345678:123"           # JWT 签发者
+$env:WEB_EXT_API_SECRET = "abc123def456ghi789..."   # JWT 私钥
+```
+
+```bash
+# Linux/Mac
+export WEB_EXT_API_KEY="user:12345678:123"
+export WEB_EXT_API_SECRET="abc123def456ghi789..."
+```
+
+#### 打包命令
+
+```bash
+# 一键打包两个平台
+pnpm package
+
+# 或单独打包
+pnpm package:chrome  # Chrome zip
+pnpm sign:firefox    # Firefox 已签名 xpi
+```
+
+**输出：**
+- Chrome: `apps/chrome-extension/chrome-extension.zip`
+- Firefox: `apps/firefox-extension/*.xpi`（已签名，可直接安装）
+
+### 📥 安装方式
+
+**Firefox（推荐）：**
+- 拖拽 `.xpi` 文件到 Firefox 窗口即可安装
+
+**Chrome：**
+1. 解压 `chrome-extension.zip`
+2. 访问 `chrome://extensions/`
+3. 开启「开发者模式」
+4. 点击「加载已解压的扩展程序」
+5. 选择解压后的目录
 
 ### 📄 许可证
 

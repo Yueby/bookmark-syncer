@@ -11,9 +11,9 @@ const manifest = defineManifest({
   action: {
     default_popup: "index.html",
     default_icon: {
-      "16": "icon.png",
-      "32": "icon.png",
-      "48": "icon.png",
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
       "128": "icon.png",
     },
   },
@@ -24,9 +24,9 @@ const manifest = defineManifest({
     type: "module",
   },
   icons: {
-    "16": "icon.png",
-    "32": "icon.png",
-    "48": "icon.png",
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
     "128": "icon.png",
   },
 });

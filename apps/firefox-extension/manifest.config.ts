@@ -11,9 +11,9 @@ const manifest = defineManifest({
   action: {
     default_popup: "index.html",
     default_icon: {
-      "16": "icon.png",
-      "32": "icon.png",
-      "48": "icon.png",
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
       "128": "icon.png",
     },
   },
@@ -24,9 +24,9 @@ const manifest = defineManifest({
     type: "module",
   },
   icons: {
-    "16": "icon.png",
-    "32": "icon.png",
-    "48": "icon.png",
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
     "128": "icon.png",
   },
 });
@@ -36,7 +36,8 @@ const manifest = defineManifest({
 manifest.browser_specific_settings = {
   gecko: {
     id: "bookmark-syncer@example.com",
-    strict_min_version: "109.0",
+    strict_min_version: "112.0", // 需要 112+ 才支持 background.type: "module"
+    data_collection_permissions: false, // 声明不收集用户数据（AMO 要求）
   },
 };
 

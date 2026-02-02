@@ -40,24 +40,29 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Detected version from tag: $VERSION"
 
-      - name: Build Extensions
-        run: pnpm build
-
       - name: Package Chrome Extension
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          cd apps/chrome-extension/dist
-          zip -r ../../../bookmark-syncer-chrome-v$VERSION.zip .
+        run: pnpm package:chrome
 
-      - name: Package Firefox Extension
+      - name: Sign Firefox Extension
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.FIREFOX_WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.FIREFOX_WEB_EXT_API_SECRET }}
+        run: pnpm sign:firefox
+
+      - name: Rename build artifacts
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cd apps/firefox-extension/dist
-          zip -r ../../../bookmark-syncer-firefox-v$VERSION.zip .
+          # 重命名 Chrome zip
+          mv apps/chrome-extension/chrome-extension.zip bookmark-syncer-chrome-v$VERSION.zip
+          # 重命名 Firefox xpi（web-ext 生成的文件名包含版本号）
+          XPI_FILE=$(ls apps/firefox-extension/*.xpi | head -n 1)
+          if [ -f "$XPI_FILE" ]; then
+            mv "$XPI_FILE" bookmark-syncer-firefox-v$VERSION.xpi
+          fi
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
             bookmark-syncer-chrome-v${{ steps.version.outputs.version }}.zip
-            bookmark-syncer-firefox-v${{ steps.version.outputs.version }}.zip
+            bookmark-syncer-firefox-v${{ steps.version.outputs.version }}.xpi

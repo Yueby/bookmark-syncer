@@ -6,13 +6,19 @@
   "scripts": {
     "build": "pnpm build:chrome && pnpm build:firefox",
     "build:chrome": "pnpm --filter @bookmark-syncer/chrome-extension build",
-    "build:firefox": "pnpm --filter @bookmark-syncer/firefox-extension build"
+    "build:firefox": "pnpm --filter @bookmark-syncer/firefox-extension build",
+    "package": "pnpm package:chrome && pnpm sign:firefox",
+    "package:chrome": "pnpm build:chrome && cd apps/chrome-extension/dist && npx bestzip ../chrome-extension.zip * && cd ../../..",
+    "sign:firefox": "pnpm build:firefox && web-ext sign --channel=unlisted --source-dir=apps/firefox-extension/dist --api-key=$WEB_EXT_API_KEY --api-secret=$WEB_EXT_API_SECRET --artifacts-dir=apps/firefox-extension"
   },
   "keywords": [],
   "author": "",
   "license": "AGPL-3.0",
   "packageManager": "pnpm@10.26.2",
   "devDependencies": {
-    "@types/node": "^25.0.10"
+    "@types/node": "^25.0.10",
+    "bestzip": "^2.2.1",
+    "chrome-webstore-upload-cli": "^3.5.0",
+    "web-ext": "^9.2.0"
   }
 }
