@@ -1,4 +1,4 @@
-import { cn } from '../lib/utils'
+import { cn } from '../infrastructure/utils/format'
 
 export function StatsCard({ label, count, loading, color }: { label: string, count: number, loading: boolean, color: 'indigo' | 'zinc' }) {
   return (

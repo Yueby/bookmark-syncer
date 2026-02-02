@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
-import { cn } from '../lib/utils'
-import { Cloud, Settings, Moon, Sun, Monitor } from 'lucide-react'
+import { Cloud, Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { useTheme } from '../hooks/useTheme'
+import { cn } from '../infrastructure/utils/format'
 
 interface TabNavProps {
   activeTab: 'sync' | 'settings'

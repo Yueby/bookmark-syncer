@@ -1,12 +1,14 @@
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Input } from './Input'
-import { Button } from './Button'
-import { Label } from './Label'
-import { useStorage } from '../hooks/useStorage'
-import { Loader2, Clock, ChevronRight, ChevronLeft, Link2, RefreshCw, Info } from 'lucide-react'
-import { createWebDAVClient } from '../services/webdav'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronLeft, ChevronRight, Clock, Info, Link2, Loader2, RefreshCw } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { updateScheduledSync } from '../application'
+import { smartPush } from '../core/sync'
+import { useStorage } from '../hooks/useStorage'
+import { getWebDAVClient } from '../infrastructure/http/webdav-client'
+import { Button } from './Button'
+import { Input } from './Input'
+import { Label } from './Label'
 
 type SubPage = 'main' | 'webdav' | 'sync' | 'about'
 
@@ -61,9 +63,59 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
   const testConnection = async () => {
     setTesting(true)
     try {
-      const client = createWebDAVClient({ url: webdavUrl, username, password })
+      // 保存时自动 trim 去除首尾空格
+      const trimmedUrl = webdavUrl.trim();
+      const trimmedUsername = username.trim();
+      const trimmedPassword = password.trim();
+      
+      // 检查配置是否变更（用于决定是否需要自动备份）
+      const previousUrl = webdavUrl.trim();
+      const previousUsername = username.trim();
+      const configChanged = 
+        (previousUrl && previousUrl !== trimmedUrl) || 
+        (previousUsername && previousUsername !== trimmedUsername);
+      
+      // 测试连接
+      const client = getWebDAVClient({ 
+        url: trimmedUrl, 
+        username: trimmedUsername, 
+        password: trimmedPassword 
+      })
       await client.testConnection()
-      toast.success('连接成功', { description: '已成功连接到 WebDAV 服务器' })
+      
+      // 更新存储的值
+      if (trimmedUrl !== webdavUrl) setWebdavUrl(trimmedUrl);
+      if (trimmedUsername !== username) setUsername(trimmedUsername);
+      if (trimmedPassword !== password) setPassword(trimmedPassword);
+      
+      // 配置变更且连接成功 → 自动备份
+      if (configChanged && previousUrl) { // 确保之前有配置（不是首次设置）
+        toast.info('检测到配置变更，正在创建备份...', { duration: 2000 });
+        try {
+          const result = await smartPush(
+            { url: trimmedUrl, username: trimmedUsername, password: trimmedPassword }, 
+            'manual'
+          );
+          
+          if (result.success) {
+            toast.success('连接成功', { 
+              description: '已成功连接到 WebDAV 服务器并创建备份' 
+            });
+          } else {
+            console.warn('[Settings] Auto backup skipped:', result.message);
+            toast.success('连接成功', { 
+              description: '已成功连接到 WebDAV 服务器' 
+            });
+          }
+        } catch (backupError) {
+          console.warn('[Settings] Auto backup failed:', backupError);
+          toast.success('连接成功', { 
+            description: '已成功连接到 WebDAV 服务器（备份失败）' 
+          });
+        }
+      } else {
+        toast.success('连接成功', { description: '已成功连接到 WebDAV 服务器' });
+      }
     } catch (e) {
       toast.error('连接失败', { description: (e as Error).message || '未知错误' })
     } finally {
@@ -72,9 +124,9 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full overflow-y-auto">
       <SubPageHeader title="WebDAV 配置" onBack={onBack} />
-      <div className="space-y-4">
+      <div className="space-y-4 pb-4">
         <div className="space-y-2">
           <Label className="text-muted-foreground">服务器地址 (URL)</Label>
           <Input
@@ -117,11 +169,24 @@ function SyncSettingsPage({ onBack }: { onBack: () => void }) {
   const [autoSyncEnabled, setAutoSyncEnabled] = useStorage('auto_sync_enabled', true)
   const [scheduledSyncEnabled, setScheduledSyncEnabled] = useStorage('scheduled_sync_enabled', false)
   const [scheduledSyncInterval, setScheduledSyncInterval] = useStorage('scheduled_sync_interval', 30)
+  const [backupFileInterval, setBackupFileInterval] = useStorage('backup_file_interval', 1)
+
+  // 监听定时同步配置变化，立即更新 Alarm
+  useEffect(() => {
+    const updateAlarm = async () => {
+      try {
+        await updateScheduledSync();
+      } catch (error) {
+        console.error('[Settings] Failed to update scheduled sync:', error);
+      }
+    };
+    updateAlarm();
+  }, [scheduledSyncEnabled, scheduledSyncInterval])
 
   return (
-    <div>
+    <div className="flex flex-col h-full overflow-y-auto">
       <SubPageHeader title="同步设置" onBack={onBack} />
-      <div className="space-y-4">
+      <div className="space-y-4 pb-4">
         {/* 自动同步 */}
         <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/30">
           <div>
@@ -178,6 +243,24 @@ function SyncSettingsPage({ onBack }: { onBack: () => void }) {
             </p>
           </div>
         )}
+
+        {/* 备份文件间隔 */}
+        <div className="space-y-2 p-4 rounded-xl bg-secondary/30">
+          <Label className="text-muted-foreground">备份文件间隔（分钟）</Label>
+          <select
+            value={backupFileInterval}
+            onChange={(e) => setBackupFileInterval(parseInt(e.target.value, 10))}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground"
+          >
+            <option value={1}>1 分钟</option>
+            <option value={5}>5 分钟（推荐）</option>
+            <option value={10}>10 分钟</option>
+            <option value={30}>30 分钟</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            在此时间内的修改将覆盖同一个文件，避免产生过多备份
+          </p>
+        </div>
       </div>
     </div>
   )
@@ -224,9 +307,9 @@ function AboutPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full overflow-y-auto">
       <SubPageHeader title="关于" onBack={onBack} />
-      <div className="space-y-4">
+      <div className="space-y-4 pb-4">
         <div className="p-4 rounded-xl bg-secondary/30 text-center">
           <h3 className="text-xl font-bold text-foreground">Bookmark Syncer</h3>
           <p className="text-sm text-muted-foreground mt-1">v{currentVersion}</p>
@@ -278,7 +361,7 @@ export function SettingsView() {
   const direction = subPage === 'main' ? -1 : 1
 
   return (
-    <div className="pt-4 pb-2 overflow-hidden">
+    <div className="flex flex-col h-full pt-4">
       <AnimatePresence mode="wait" custom={direction}>
         {subPage === 'main' && (
           <motion.div
@@ -289,6 +372,7 @@ export function SettingsView() {
             animate="center"
             exit="exit"
             transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="flex-1"
           >
             <div className="space-y-3">
               <SettingsItem
@@ -322,6 +406,7 @@ export function SettingsView() {
             animate="center"
             exit="exit"
             transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="flex-1 overflow-hidden"
           >
             <WebDAVPage onBack={() => setSubPage('main')} />
           </motion.div>
@@ -336,6 +421,7 @@ export function SettingsView() {
             animate="center"
             exit="exit"
             transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="flex-1 overflow-hidden"
           >
             <SyncSettingsPage onBack={() => setSubPage('main')} />
           </motion.div>
@@ -350,6 +436,7 @@ export function SettingsView() {
             animate="center"
             exit="exit"
             transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="flex-1 overflow-hidden"
           >
             <AboutPage onBack={() => setSubPage('main')} />
           </motion.div>

@@ -1,8 +1,9 @@
 /**
  * 浏览器信息检测工具
+ * 从 User Agent 识别浏览器类型和版本
  */
 
-interface BrowserInfo {
+export interface BrowserInfo {
   name: string;
   version: string;
   fullName: string;
@@ -10,6 +11,8 @@ interface BrowserInfo {
 
 /**
  * 从 User Agent 解析浏览器信息
+ * 
+ * @returns 浏览器名称、版本和完整名称
  */
 export function getBrowserInfo(): BrowserInfo {
   const ua = navigator.userAgent;
@@ -48,7 +51,11 @@ export function getBrowserInfo(): BrowserInfo {
 }
 
 /**
- * 检查两个浏览器是否为同一类型
+ * 检查两个浏览器是否为同一类型（忽略版本号）
+ * 
+ * @param browser1 第一个浏览器标识
+ * @param browser2 第二个浏览器标识
+ * @returns 是否为同一浏览器
  */
 export function isSameBrowser(browser1: string, browser2: string): boolean {
   // 提取浏览器名称（忽略版本号）

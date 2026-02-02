@@ -2,14 +2,13 @@ import { useEffect, useState } from 'react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 
 import { motion } from 'framer-motion'
-import { AlertTriangle, Cloud, History, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
+import { AlertTriangle, Cloud, Download, FilePlus, History, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
+import { clearLastBackupFileInfo } from '../application/state-manager'
+import { snapshotManager, type Snapshot } from '../core/backup'
+import { bookmarkRepository, countBookmarks } from '../core/bookmark'
+import { getCloudBackupList, getCloudInfo, restoreFromCloudBackup, smartPull, smartPush, smartSync, type CloudBackupFile } from '../core/sync'
 import { useStorage } from '../hooks/useStorage'
-import { cn } from '../lib/utils'
-import { BackupService, Snapshot } from '../services/backupService'
-import { BookmarkService } from '../services/bookmarkService'
-import { smartPull, smartPush, smartSync } from '../services/syncService'
-import { createWebDAVClient } from '../services/webdav'
-import { CloudBackup } from '../types'
+import { cn } from '../infrastructure/utils/format'
 import { Button } from './Button'
 import { Drawer } from './Drawer'
 import { StatsCard } from './StatsCard'
@@ -42,66 +41,131 @@ export function SyncView() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'checking' | 'syncing' | 'success' | 'error'>('idle')
   const [msg, setMsg] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerMode, setDrawerMode] = useState<'conflict' | 'history'>('conflict')
+  const [drawerMode, setDrawerMode] = useState<'conflict' | 'history' | 'cloudBackups'>('conflict')
   const [confirmDrawerOpen, setConfirmDrawerOpen] = useState(false)
   const [pendingRestoreSnapshot, setPendingRestoreSnapshot] = useState<Snapshot | null>(null)
+  const [cloudBackups, setCloudBackups] = useState<CloudBackupFile[]>([])
+  const [loadingCloudBackups, setLoadingCloudBackups] = useState(false)
+  const [pendingRestoreCloudBackup, setPendingRestoreCloudBackup] = useState<CloudBackupFile | null>(null)
 
   const isConfigured = !!webdavUrl
-  const getClient = () => createWebDAVClient({ url: webdavUrl, username, password })
 
   const loadCounts = async () => {
     try {
-      setLocalCount(await BookmarkService.getLocalCount())
+      setLocalCount(await bookmarkRepository.getLocalCount())
       
       if (isConfigured) {
         setLoading(true) 
-        const client = getClient()
         try {
-            // First check legacy path, then new path
-            // For Phase 5 we force new path
-            const dir = 'BookmarkSyncer'
-            const json = await client.getFile(`${dir}/bookmarks.json`)
+            // 使用 getCloudInfo 获取最新备份信息
+            // 注意：由于可能有多设备同步，这里需要实时获取最新数据
+            const cloudInfo = await getCloudInfo(getSyncConfig(), true)
             
-            if (json) {
-                // Determine if it's new CloudBackup or old array
-                const data = JSON.parse(json)
-                if (Array.isArray(data)) {
-                     // Legacy
-                     setCloudCount(BookmarkService.countBookmarks(data))
-                     setCloudMeta(null)
-                } else {
-                     // New CloudBackup
-                     const meta = (data as CloudBackup).metadata
-                     setCloudCount(meta.totalCount)
-                     setCloudMeta({ 
-                       time: meta.timestamp, 
-                       device: `${meta.browser} ${meta.browserVersion}`, 
-                       count: meta.totalCount,
-                       browser: meta.browser 
-                     })
-
-                }
+            if (cloudInfo.exists && cloudInfo.totalCount !== undefined) {
+                setCloudCount(cloudInfo.totalCount)
+                setCloudMeta({ 
+                  time: cloudInfo.timestamp || 0, 
+                  device: cloudInfo.browser || '', 
+                  count: cloudInfo.totalCount,
+                  browser: cloudInfo.browser 
+                })
             } else {
                 setCloudCount(0)
                 setCloudMeta(null)
             }
         } catch (e) {
-            // silent fail
+            console.error('[SyncView] Failed to load cloud info:', e)
+            toast.error('加载云端信息失败', {
+              description: (e as Error).message || '请检查网络连接和 WebDAV 配置'
+            })
+            setCloudCount(0)
+            setCloudMeta(null)
         } finally {
             setLoading(false)
         }
       } else {
         setLoading(false)
       }
-    } catch (e) { setLoading(false) }
+    } catch (e) { 
+      console.error('Failed to load counts:', e)
+      setLoading(false) 
+    }
   }
 
   useEffect(() => { loadCounts(); loadSnapshots() }, [webdavUrl, lastSyncTime])
 
   // 加载本地快照列表
   const loadSnapshots = async () => {
-    const list = await BackupService.getAllSnapshots()
-    setSnapshots(list)
+    try {
+      const list = await snapshotManager.getAllSnapshots()
+      setSnapshots(list)
+    } catch (error) {
+      console.error('[SyncView] Failed to load snapshots:', error)
+      // 快照加载失败不影响主要功能，仅记录日志
+    }
+  }
+
+  // 加载云端备份列表
+  const loadCloudBackups = async () => {
+    if (!isConfigured) return
+    
+    setLoadingCloudBackups(true)
+    try {
+      // 使用缓存，避免频繁 PROPFIND
+      const list = await getCloudBackupList(getSyncConfig(), false)
+      setCloudBackups(list)
+    } catch (error) {
+      console.error('Failed to load cloud backups:', error)
+      toast.error('加载云端备份列表失败')
+    } finally {
+      setLoadingCloudBackups(false)
+    }
+  }
+
+  // 请求从云端备份恢复
+  const requestRestoreCloudBackup = (backup: CloudBackupFile) => {
+    setPendingRestoreCloudBackup(backup)
+    setConfirmDrawerOpen(true)
+  }
+
+  // 确认从云端备份恢复
+  const confirmRestoreCloudBackup = async () => {
+    if (!pendingRestoreCloudBackup) return
+    
+    setSyncStatus('syncing')
+    setMsg('正在从云端恢复...')
+    setConfirmDrawerOpen(false)
+    setDrawerOpen(false)
+    
+    // 提示用户操作会在后台继续
+    const loadingToast = toast.loading('正在从云端恢复书签...', { 
+      description: '即使关闭面板，操作也会在后台完成' 
+    })
+    
+    try {
+      const result = await restoreFromCloudBackup(getSyncConfig(), pendingRestoreCloudBackup.path, 'manual')
+      
+      toast.dismiss(loadingToast)
+      
+      if (result.success) {
+        setSyncStatus('success')
+        setMsg(result.message)
+        loadCounts()
+        loadSnapshots() // 刷新快照列表
+        toast.success('恢复成功', { description: '已从云端恢复书签' })
+      } else {
+        setSyncStatus('error')
+        setMsg(result.message)
+        toast.error('恢复失败', { description: result.message })
+      }
+    } catch (e) {
+      toast.dismiss(loadingToast)
+      setSyncStatus('error')
+      setMsg('恢复失败')
+      toast.error('恢复失败', { description: (e as Error).message })
+    } finally {
+      setPendingRestoreCloudBackup(null)
+    }
   }
 
   // 请求恢复快照（打开确认 Drawer）
@@ -120,20 +184,22 @@ export function SyncView() {
     setDrawerOpen(false)
     
     try {
-      // 先备份当前状态
-      const currentTree = await BookmarkService.getTree()
-      const currentCount = BookmarkService.countBookmarks(currentTree)
-      await BackupService.createSnapshot(currentTree, currentCount, '恢复前自动备份')
+      // 先备份当前状态（本地快照恢复前）
+      const currentTree = await bookmarkRepository.getTree()
+      const currentCount = countBookmarks(currentTree)
+      await snapshotManager.createSnapshot(currentTree, currentCount, '本地快照恢复前自动备份')
       
-      await BookmarkService.restoreFromBackup(pendingRestoreSnapshot.tree)
+      await bookmarkRepository.restoreFromBackup(pendingRestoreSnapshot.tree)
       
       setSyncStatus('success')
       setMsg('快照恢复成功')
       loadCounts()
       loadSnapshots()
+      toast.success('快照恢复成功')
     } catch (e) {
       setSyncStatus('error')
       setMsg('恢复失败')
+      toast.error('恢复失败', { description: (e as Error).message })
     } finally {
       setPendingRestoreSnapshot(null)
     }
@@ -142,13 +208,29 @@ export function SyncView() {
   // 取消恢复
   const cancelRestore = () => {
     setPendingRestoreSnapshot(null)
+    setPendingRestoreCloudBackup(null)
     setConfirmDrawerOpen(false)
+  }
+
+  // 打开云端备份列表
+  const openCloudBackups = () => {
+    setDrawerMode('cloudBackups')
+    setDrawerOpen(true)
+    loadCloudBackups()
   }
 
   // --- 智能无感同步逻辑 ---
   
-  // 获取 syncService 需要的配置
-  const getSyncConfig = () => ({ url: webdavUrl, username, password })
+  // 获取 syncService 需要的配置（去除首尾空格）
+  const getSyncConfig = () => {
+    const config = { 
+      url: webdavUrl.trim(), 
+      username: username.trim(), 
+      password: password.trim() 
+    };
+    console.log('[SyncView] Getting sync config:', { url: config.url, username: config.username, hasPassword: !!config.password });
+    return config;
+  }
   
   const handleSmartSync = async () => {
       if (!isConfigured) return
@@ -163,7 +245,7 @@ export function SyncView() {
           if (result.cloudInfo?.exists) {
               setCloudMeta({
                   time: result.cloudInfo.timestamp || 0,
-                  device: `${result.cloudInfo.browser || ''} ${result.cloudInfo.browserVersion || ''}`.trim(),
+                  device: result.cloudInfo.browser || '',
                   count: result.cloudInfo.totalCount || 0,
                   browser: result.cloudInfo.browser
               })
@@ -183,6 +265,11 @@ export function SyncView() {
               setSyncStatus('success')
               setMsg(result.message)
               loadCounts()
+              
+              // 重置定时同步计时器，避免手动同步后立即触发定时同步
+              const { resetScheduledSync } = await import('../background/autoSync')
+              await resetScheduledSync()
+              
               setTimeout(() => setMsg(''), 3000)
           } else {
               if (result.message === '同步正在进行中') {
@@ -201,12 +288,8 @@ export function SyncView() {
 
   const executePush = async () => {
       setSyncStatus('syncing')
-      setMsg('正在准备上传...')
+      setMsg('正在上传...')
       try {
-          // UI 层负责创建快照（可选）
-          // 由于上传不会覆盖本地数据，所以可以跳过快照
-          
-          setMsg('正在上传...')
           const result = await smartPush(getSyncConfig(), 'manual')
           
           if (result.success) {
@@ -214,6 +297,11 @@ export function SyncView() {
               setMsg(result.message)
               setDrawerOpen(false)
               loadCounts()
+              loadSnapshots() // 刷新快照列表
+              
+              // 重置定时同步计时器
+              const { resetScheduledSync } = await import('../background/autoSync')
+              await resetScheduledSync()
           } else {
               if (result.message === '同步正在进行中') {
                   toast.info('同步正在进行中，请稍后重试')
@@ -231,24 +319,49 @@ export function SyncView() {
       }
   }
 
+  // 强制创建新备份（忽略时间窗口）
+  const forceNewBackup = async () => {
+      try {
+          await clearLastBackupFileInfo()
+          toast.success('已清除时间窗口', { 
+              description: '下次同步将创建新备份文件' 
+          })
+      } catch (e) {
+          toast.error('操作失败', {
+              description: (e as Error).message || '未知错误'
+          })
+      }
+  }
+
   const executePull = async (mode: 'overwrite' | 'merge') => {
       setSyncStatus('syncing') 
-      setMsg('正在创建快照...')
+      setMsg(mode === 'overwrite' ? '正在恢复...' : '正在合并...')
+      
+      // 提示用户操作会在后台继续
+      const loadingToast = toast.loading(
+        mode === 'overwrite' ? '正在恢复书签...' : '正在合并书签...', 
+        { description: '即使关闭面板，操作也会在后台完成' }
+      )
+      
       try {
-          // UI 层负责在同步前创建快照
-          const currentTree = await BookmarkService.getTree()
-          const currentCount = BookmarkService.countBookmarks(currentTree)
-          await BackupService.createSnapshot(currentTree, currentCount, '恢复前自动备份')
-          
-          setMsg(mode === 'overwrite' ? '覆盖恢复中...' : '正在增量合并...')
           const result = await smartPull(getSyncConfig(), 'manual', mode)
+          
+          toast.dismiss(loadingToast)
           
           if (result.success) {
               setSyncStatus('success')
               setMsg(result.message)
               setDrawerOpen(false)
               loadCounts()
-              loadSnapshots()
+              loadSnapshots() // 刷新快照列表
+              
+              // 重置定时同步计时器
+              const { resetScheduledSync } = await import('../background/autoSync')
+              await resetScheduledSync()
+              
+              toast.success('恢复成功', { 
+                description: `已恢复${mode === 'merge' ? '并合并' : ''}书签` 
+              })
           } else {
               if (result.message === '同步正在进行中') {
                   toast.info('同步正在进行中，请稍后重试')
@@ -260,6 +373,7 @@ export function SyncView() {
               }
           }
       } catch (e) {
+          toast.dismiss(loadingToast)
           setSyncStatus('error')
           setMsg('恢复失败')
           toast.error('恢复失败', { description: (e as Error).message })
@@ -303,33 +417,50 @@ export function SyncView() {
              <div className="text-center text-muted-foreground py-8">请先配置连接</div>
          ) : (
              <>
-                <button
-                    onClick={handleSmartSync}
-                    disabled={!isOnline || (syncStatus !== 'idle' && syncStatus !== 'success' && syncStatus !== 'error')}
-                    className={cn(
-                        "group relative w-40 h-40 rounded-full glass-panel flex flex-col items-center justify-center transition-all shadow-xl",
-                        isOnline 
-                            ? "hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100" 
-                            : "opacity-50 grayscale cursor-not-allowed"
-                    )}
-                >
-                    {isOnline && <div className="absolute inset-0 rounded-full bg-indigo-600/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />}
-                    
-                    {!isOnline ? (
-                        <WifiOff className="w-12 h-12 text-muted-foreground" />
-                    ) : (syncStatus === 'syncing' || syncStatus === 'checking') ? (
-                        <RefreshCw className="w-12 h-12 text-primary animate-spin" />
-                    ) : (
-                        <Cloud className="w-12 h-12 text-muted-foreground group-hover:text-primary transition-colors" />
-                    )}
-                    
-                    <span className="mt-3 text-sm font-medium text-secondary-foreground">
-                        {!isOnline ? '离线' :
-                         syncStatus === 'checking' ? '分析中' : 
-                         syncStatus === 'syncing' ? '同步中' : 
-                         syncStatus === 'success' ? '已完成' : '立即同步'}
-                    </span>
-                </button>
+                <div className="relative">
+                  <button
+                      onClick={handleSmartSync}
+                      disabled={!isOnline || (syncStatus !== 'idle' && syncStatus !== 'success' && syncStatus !== 'error')}
+                      className={cn(
+                          "group relative w-40 h-40 rounded-full glass-panel flex flex-col items-center justify-center transition-all shadow-xl",
+                          isOnline 
+                              ? "hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100" 
+                              : "opacity-50 grayscale cursor-not-allowed"
+                      )}
+                  >
+                      {isOnline && <div className="absolute inset-0 rounded-full bg-indigo-600/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />}
+                      
+                      {!isOnline ? (
+                          <WifiOff className="w-12 h-12 text-muted-foreground" />
+                      ) : (syncStatus === 'syncing' || syncStatus === 'checking') ? (
+                          <RefreshCw className="w-12 h-12 text-primary animate-spin" />
+                      ) : (
+                          <Cloud className="w-12 h-12 text-muted-foreground group-hover:text-primary transition-colors" />
+                      )}
+                      
+                      <span className="mt-3 text-sm font-medium text-secondary-foreground">
+                          {!isOnline ? '离线' :
+                           syncStatus === 'checking' ? '分析中' : 
+                           syncStatus === 'syncing' ? '同步中' : 
+                           syncStatus === 'success' ? '已完成' : '立即同步'}
+                      </span>
+                  </button>
+
+                  {/* 小的圆形恢复按钮 */}
+                  <button
+                      onClick={openCloudBackups}
+                      disabled={!isOnline}
+                      className={cn(
+                          "absolute bottom-0 right-0 w-12 h-12 rounded-full glass-panel flex items-center justify-center transition-all shadow-lg",
+                          isOnline 
+                              ? "hover:scale-110 active:scale-95" 
+                              : "opacity-50 cursor-not-allowed"
+                      )}
+                      title="查看云端备份"
+                  >
+                      <Download className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
+                  </button>
+                </div>
 
                 <div className="h-6 text-center">
                     {msg && (
@@ -365,13 +496,56 @@ export function SyncView() {
       </motion.div>
     </motion.div>
 
-    {/* Drawer for Conflict / History */}
+    {/* Drawer for Conflict / History / Cloud Backups */}
     <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={drawerMode === 'history' ? '本地快照' : '同步选项'}
+        title={drawerMode === 'history' ? '本地快照' : drawerMode === 'cloudBackups' ? '云端备份' : '同步选项'}
     >
-        {drawerMode === 'history' ? (
+        {drawerMode === 'cloudBackups' ? (
+             <div className="space-y-3 pt-2">
+                <p className="text-xs text-muted-foreground mb-2">选择一个云端备份恢复到本地（会自动创建本地快照）：</p>
+                {loadingCloudBackups ? (
+                    <div className="text-center py-8">
+                        <RefreshCw className="w-6 h-6 text-muted-foreground animate-spin mx-auto mb-2" />
+                        <span className="text-xs text-muted-foreground">加载中...</span>
+                    </div>
+                ) : cloudBackups.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-4">暂无云端备份</p>
+                ) : (
+                    cloudBackups.map((backup) => (
+                        <div key={backup.path} className="bg-muted border border-border rounded-lg p-3 flex items-center justify-between group transition-colors hover:border-primary/50">
+                             <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-medium text-foreground">
+                                    {new Date(backup.timestamp).toLocaleString()}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                    {backup.browser ? (
+                                        `${backup.browser}${backup.totalCount ? ` · ${backup.totalCount} 书签` : ''}`
+                                    ) : (
+                                        backup.name
+                                    )}
+                                </span>
+                             </div>
+                             <div className="flex items-center gap-3">
+                                 <span className="text-xs text-muted-foreground font-mono">
+                                     {backup.totalCount !== undefined ? `${backup.totalCount} 书签` : ''}
+                                 </span>
+                                 <Button 
+                                     size="sm" 
+                                     variant="ghost"
+                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-2"
+                                     onClick={() => requestRestoreCloudBackup(backup)}
+                                 >
+                                     <Download className="w-3 h-3 mr-1" />
+                                     恢复
+                                 </Button>
+                             </div>
+                        </div>
+                    ))
+                )}
+             </div>
+        ) : drawerMode === 'history' ? (
              <div className="space-y-3 pt-2">
                 <p className="text-xs text-muted-foreground mb-2">操作前会自动创建快照，点击可恢复到历史状态：</p>
                 {snapshots.map((s) => (
@@ -401,9 +575,9 @@ export function SyncView() {
                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                                  onClick={async (e) => {
                                      e.stopPropagation()
-                                     await BackupService.deleteSnapshot(s.id)
-                                     loadSnapshots()
-                                     toast.success('快照已删除')
+                                    await snapshotManager.deleteSnapshot(s.id)
+                                    loadSnapshots()
+                                    toast.success('快照已删除')
                                  }}
                              >
                                  <Trash2 className="w-3 h-3" />
@@ -461,6 +635,19 @@ export function SyncView() {
                         )}
                     </Button>
                 </div>
+                
+                {/* 强制新备份按钮 */}
+                <div className="flex justify-end mt-2">
+                    <Button 
+                        variant="ghost" 
+                        size="sm"
+                        className="text-xs h-7 gap-1"
+                        onClick={forceNewBackup}
+                    >
+                        <FilePlus className="w-3 h-3" />
+                        强制新备份
+                    </Button>
+                </div>
             </div>
         ) : null}
     </Drawer>
@@ -471,16 +658,29 @@ export function SyncView() {
         onClose={cancelRestore}
         title="确认恢复"
     >
-        {pendingRestoreSnapshot && (
+        {(pendingRestoreSnapshot || pendingRestoreCloudBackup) && (
             <div className="space-y-4 pt-2">
                 <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-400 dark:border-amber-500/20 p-4 rounded-xl flex gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                     <div>
-                        <h4 className="text-sm font-bold text-foreground mb-1">确定要恢复此快照吗？</h4>
+                        <h4 className="text-sm font-bold text-foreground mb-1">
+                            {pendingRestoreSnapshot ? '确定要恢复此本地快照吗？' : '确定要从云端恢复此备份吗？'}
+                        </h4>
                         <p className="text-xs text-foreground/80 leading-relaxed">
-                            将恢复到 {new Date(pendingRestoreSnapshot.timestamp).toLocaleString()} 的状态<br/>
-                            （{pendingRestoreSnapshot.count} 个书签）<br/>
-                            这将覆盖当前所有书签。
+                            {pendingRestoreSnapshot ? (
+                                <>
+                                    将恢复到 {new Date(pendingRestoreSnapshot.timestamp).toLocaleString()} 的状态<br/>
+                                    （{pendingRestoreSnapshot.count} 个书签）<br/>
+                                    这将覆盖当前所有书签。
+                                </>
+                            ) : pendingRestoreCloudBackup ? (
+                                <>
+                                    将恢复到 {new Date(pendingRestoreCloudBackup.timestamp).toLocaleString()} 的云端备份<br/>
+                                    {pendingRestoreCloudBackup.totalCount && `（${pendingRestoreCloudBackup.totalCount} 个书签）`}<br/>
+                                    {pendingRestoreCloudBackup.browser && `来自 ${pendingRestoreCloudBackup.browser}`}<br/>
+                                    这将覆盖当前所有书签，并会自动创建本地快照。
+                                </>
+                            ) : null}
                         </p>
                     </div>
                 </div>
@@ -493,7 +693,7 @@ export function SyncView() {
                         取消
                     </Button>
                     <Button 
-                        onClick={confirmRestoreSnapshot}
+                        onClick={pendingRestoreSnapshot ? confirmRestoreSnapshot : confirmRestoreCloudBackup}
                     >
                         <RotateCcw className="w-4 h-4 mr-2" />
                         确认恢复

@@ -1,12 +1,6 @@
 export interface BookmarkMetadata {
-  timestamp: number;
-  totalCount: number;
-  clientVersion: string;
-  browser: string; // 浏览器名称，如 "Chrome", "Firefox", "Edge"
-  browserVersion: string; // 浏览器版本，如 "120.0.0"
-  stats?: {
-    totalFolders: number;
-  };
+  timestamp: number; // 精确时间戳（毫秒）
+  clientVersion: string; // 扩展版本号
 }
 
 export interface BookmarkNode {
@@ -19,8 +13,6 @@ export interface BookmarkNode {
   dateAdded?: number;
   dateGroupModified?: number;
   children?: BookmarkNode[];
-  // Chrome 134+ 支持：系统文件夹类型
-  // "bookmarks-bar" | "other" | "mobile" | "managed"
   folderType?: string;
 }
 
