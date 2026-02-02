@@ -126,7 +126,17 @@ export class BookmarkRepository {
   async emptyFolder(id: string): Promise<void> {
     const children = await BrowserBookmarksAPI.getChildren(id);
     for (const child of children) {
-      await BrowserBookmarksAPI.removeTree(child.id);
+      try {
+        await BrowserBookmarksAPI.removeTree(child.id);
+      } catch (error) {
+        const errorMsg = (error as Error).message || '';
+        // 如果书签已被删除，静默跳过
+        if (errorMsg.includes("Can't find bookmark")) {
+          console.log(`[Repository] Child ${child.id} already removed, skipping`);
+        } else {
+          console.warn(`[Repository] Failed to remove child ${child.id}:`, error);
+        }
+      }
     }
   }
 
