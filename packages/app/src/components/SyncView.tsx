@@ -92,7 +92,10 @@ export function SyncView() {
     }
   }
 
-  useEffect(() => { loadCounts(); loadSnapshots() }, [webdavUrl, lastSyncTime])
+  // 注意：WebDAV 用户名/密码是异步从 storage 读取的。
+  // 如果这里只依赖 webdavUrl，会出现「URL 先加载 → 立刻发请求但账号/密码还是空」的情况，导致首次 401，
+  // 进而触发缓存空列表，看起来就像“后续没有任何网络请求”。
+  useEffect(() => { loadCounts(); loadSnapshots() }, [webdavUrl, username, password, lastSyncTime])
 
   // 加载本地快照列表
   const loadSnapshots = async () => {
