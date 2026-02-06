@@ -28,35 +28,31 @@ export async function getCloudInfo(config: WebDAVConfig, forceRefresh = false): 
     return { exists: false };
   }
 
-  try {
-    // 使用 getCloudBackupList 获取列表
-    const backupList = await getCloudBackupList(config, forceRefresh);
-    
-    if (backupList.length === 0) {
-      console.log("[CloudOperations] No cloud backup exists");
-      return { exists: false };
-    }
-    
-    // 获取最新的备份（列表已按时间排序）
-    const latest = backupList[0];
-    
-    const info: CloudInfo = {
-      exists: true,
-      timestamp: latest.timestamp,
-      totalCount: latest.totalCount,
-      browser: latest.browser,
-      browserVersion: undefined,
-    };
+  // 使用 getCloudBackupList 获取列表
+  // 这里不吞错误：否则 UI 会把“认证失败/解析失败”等情况误显示成“云端 0”。
+  const backupList = await getCloudBackupList(config, forceRefresh);
 
-    console.log(
-      `[CloudOperations] Cloud info: ${info.totalCount} bookmarks from ${info.browser || "unknown"}`,
-    );
-    
-    return info;
-  } catch (error) {
-    console.error("[CloudOperations] Failed to get cloud info:", error);
+  if (backupList.length === 0) {
+    console.log("[CloudOperations] No cloud backup exists");
     return { exists: false };
   }
+
+  // 获取最新的备份（列表已按时间排序）
+  const latest = backupList[0];
+
+  const info: CloudInfo = {
+    exists: true,
+    timestamp: latest.timestamp,
+    totalCount: latest.totalCount,
+    browser: latest.browser,
+    browserVersion: undefined,
+  };
+
+  console.log(
+    `[CloudOperations] Cloud info: ${info.totalCount} bookmarks from ${info.browser || "unknown"}`,
+  );
+
+  return info;
 }
 
 /**
@@ -69,57 +65,50 @@ export async function getCloudBackupList(config: WebDAVConfig, forceRefresh = fa
     return [];
   }
 
-  try {
-    // 尝试从缓存读取（除非强制刷新）
-    if (!forceRefresh) {
-      const cached = await cacheManager.getCachedBackupList();
-      if (cached) {
-        return cached.backups;
-      }
+  // 尝试从缓存读取（除非强制刷新）
+  if (!forceRefresh) {
+    const cached = await cacheManager.getCachedBackupList();
+    if (cached) {
+      return cached.backups;
     }
-
-    // 缓存未命中或已过期，执行 PROPFIND
-    console.log("[CloudOperations] Fetching backup list from cloud...");
-    const client = getWebDAVClient(config);
-    const files = await client.listFiles(DIR);
-    
-    // 过滤出备份文件（只支持 .json.gz 格式）
-    const backupFiles = files.filter(
-      (file) => file.name.startsWith("bookmarks_") && file.name.endsWith(".json.gz")
-    );
-    
-    // 按最后修改时间排序（最新的在前）
-    backupFiles.sort((a, b) => b.lastModified - a.lastModified);
-    
-    // 从文件名解析元数据（不下载文件内容）
-    const backupList: CloudBackupFile[] = backupFiles.map((file) => {
-      const parsed = fileManager.parseBackupFileName(file.name);
-      
-      return {
-        name: file.name,
-        path: file.path,
-        timestamp: parsed?.timestamp || file.lastModified,
-        totalCount: parsed?.count,
-        browser: parsed?.browser,
-        browserVersion: undefined, // 不再提供
-      };
-    });
-    
-    console.log(`[CloudOperations] Found ${backupList.length} cloud backups`);
-    
-    // 缓存结果
-    await cacheManager.cacheBackupList({
-      backups: backupList,
-      cachedAt: Date.now(),
-    });
-    
-    // 移除等待 - 不应该需要等待
-    
-    return backupList;
-  } catch (error) {
-    console.error("[CloudOperations] Failed to get cloud backup list:", error);
-    return [];
   }
+
+  // 缓存未命中或已过期，执行 PROPFIND
+  console.log("[CloudOperations] Fetching backup list from cloud...");
+  const client = getWebDAVClient(config);
+  const files = await client.listFiles(DIR);
+
+  // 过滤出备份文件（只支持 .json.gz 格式）
+  const backupFiles = files.filter(
+    (file) => file.name.startsWith("bookmarks_") && file.name.endsWith(".json.gz")
+  );
+
+  // 按最后修改时间排序（最新的在前）
+  backupFiles.sort((a, b) => b.lastModified - a.lastModified);
+
+  // 从文件名解析元数据（不下载文件内容）
+  const backupList: CloudBackupFile[] = backupFiles.map((file) => {
+    const parsed = fileManager.parseBackupFileName(file.name);
+
+    return {
+      name: file.name,
+      path: file.path,
+      timestamp: parsed?.timestamp || file.lastModified,
+      totalCount: parsed?.count,
+      browser: parsed?.browser,
+      browserVersion: undefined, // 不再提供
+    };
+  });
+
+  console.log(`[CloudOperations] Found ${backupList.length} cloud backups`);
+
+  // 缓存结果（注意：认证失败等错误会在 listFiles 抛出，因此不会缓存“假空列表”）
+  await cacheManager.cacheBackupList({
+    backups: backupList,
+    cachedAt: Date.now(),
+  });
+
+  return backupList;
 }
 
 /**
