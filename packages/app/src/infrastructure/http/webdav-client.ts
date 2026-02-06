@@ -268,16 +268,17 @@ export class WebDAVClient implements IWebDAVClient {
       } catch (error) {
         console.warn("[WebDAV] DOMParser failed, falling back to regex parser:", error);
 
-        const responseRegex = /<\w+:response[^>]*>([\s\S]*?)<\/\w+:response>/gi;
+        // 兼容可选前缀（例如 d:/D:）以及无前缀（默认命名空间）
+        const responseRegex = /<(?:\w+:)?response[^>]*>([\s\S]*?)<\/(?:\w+:)?response>/gi;
         const responses = [...xml.matchAll(responseRegex)];
 
         for (const m of responses) {
           const responseBlock = m[1];
 
-          const hrefMatch = responseBlock.match(/<\w+:href[^>]*>(.*?)<\/\w+:href>/i);
+          const hrefMatch = responseBlock.match(/<(?:\w+:)?href[^>]*>(.*?)<\/(?:\w+:)?href>/i);
           if (!hrefMatch) continue;
 
-          const isCollection = /<\w+:collection\s*\/>/i.test(responseBlock);
+          const isCollection = /<(?:\w+:)?collection\s*\/>/i.test(responseBlock);
           if (isCollection) continue;
 
           let decodedHref = decodeURIComponent(hrefMatch[1].trim());
