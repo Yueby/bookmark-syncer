@@ -55,7 +55,16 @@ export async function smartSync(
       if (latestBackupPath) {
         const json = await queueManager.getFileWithDedup(client, latestBackupPath);
         if (json) {
-          cloudData = JSON.parse(json) as CloudBackup;
+          try {
+            cloudData = JSON.parse(json) as CloudBackup;
+          } catch {
+            console.error("[SmartSyncStrategy] Cloud data is corrupted");
+            throw new Error("云端备份数据格式损坏，无法解析");
+          }
+          if (!cloudData.data || !Array.isArray(cloudData.data)) {
+            console.error("[SmartSyncStrategy] Cloud data structure invalid");
+            throw new Error("云端备份数据结构无效");
+          }
           
           // 从文件名解析浏览器信息
           const fileName = latestBackupPath.split("/").pop() || "";
@@ -80,9 +89,8 @@ export async function smartSync(
     // Case A: 云端无数据 → 直接上传
     if (!cloudData) {
       console.log("[SmartSyncStrategy] No cloud backup, uploading...");
-      // 释放锁后重新调用 smartPush（它会获取自己的锁）
-      await releaseSyncLock(lockHolder);
-      return await smartPush(config, lockHolder);
+      // 传递锁给 smartPush，避免释放后重新获取的竞态窗口
+      return await smartPush(config, lockHolder, { skipLock: true });
     }
 
     // 3. 比对内容
@@ -128,20 +136,18 @@ export async function smartSync(
       };
     }
 
-    // 5. 智能判断
-    await releaseSyncLock(lockHolder);
-
+    // 5. 智能判断（传递锁给子策略，避免释放后重新获取的竞态窗口）
     if (cloudTime > lastSyncTime) {
       // 云端比本地新 → 拉取
       console.log("[SmartSyncStrategy] Cloud is newer, pulling...");
-      const result = await smartPull(config, lockHolder, "overwrite");
+      const result = await smartPull(config, lockHolder, "overwrite", { skipLock: true });
       const elapsed = Date.now() - startTime;
       console.log(`[SmartSyncStrategy] Smart sync completed (pull) in ${elapsed}ms`);
       return { ...result, cloudInfo };
     } else {
       // 本地可能更新 → 上传
       console.log("[SmartSyncStrategy] Local might be newer, pushing...");
-      const result = await smartPush(config, lockHolder);
+      const result = await smartPush(config, lockHolder, { skipLock: true });
       const elapsed = Date.now() - startTime;
       console.log(`[SmartSyncStrategy] Smart sync completed (push) in ${elapsed}ms`);
       return { ...result, cloudInfo };

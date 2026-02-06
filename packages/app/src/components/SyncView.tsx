@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 
 import { motion } from 'framer-motion'
@@ -30,7 +30,7 @@ export function SyncView() {
   const [username] = useStorage('webdav_username', '')
   const [password] = useStorage('webdav_password', '')
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [lastSyncTime] = useStorage('lastSyncTime', 0)
+  const [syncState] = useStorage<{ time: number; url: string; type: string } | null>('syncState', null)
   const isOnline = useOnlineStatus()
   
   const [localCount, setLocalCount] = useState(0)
@@ -47,12 +47,26 @@ export function SyncView() {
   const [cloudBackups, setCloudBackups] = useState<CloudBackupFile[]>([])
   const [loadingCloudBackups, setLoadingCloudBackups] = useState(false)
   const [pendingRestoreCloudBackup, setPendingRestoreCloudBackup] = useState<CloudBackupFile | null>(null)
+  const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 安全设置消息清除定时器
+  const scheduleMsgClear = useCallback((delayMs = 3000) => {
+    if (msgTimerRef.current) clearTimeout(msgTimerRef.current)
+    msgTimerRef.current = setTimeout(() => { setMsg(''); msgTimerRef.current = null }, delayMs)
+  }, [])
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => { if (msgTimerRef.current) clearTimeout(msgTimerRef.current) }
+  }, [])
 
   const isConfigured = !!webdavUrl
 
-  const loadCounts = async () => {
+  const loadCounts = async (signal?: { aborted: boolean }) => {
     try {
-      setLocalCount(await bookmarkRepository.getLocalCount())
+      const count = await bookmarkRepository.getLocalCount()
+      if (signal?.aborted) return
+      setLocalCount(count)
       
       if (isConfigured) {
         setLoading(true) 
@@ -60,6 +74,7 @@ export function SyncView() {
             // 使用 getCloudInfo 获取最新备份信息
             // 注意：由于可能有多设备同步，这里需要实时获取最新数据
             const cloudInfo = await getCloudInfo(getSyncConfig(), true)
+            if (signal?.aborted) return
             
             if (cloudInfo.exists && cloudInfo.totalCount !== undefined) {
                 setCloudCount(cloudInfo.totalCount)
@@ -74,6 +89,7 @@ export function SyncView() {
                 setCloudMeta(null)
             }
         } catch (e) {
+            if (signal?.aborted) return
             console.error('[SyncView] Failed to load cloud info:', e)
             toast.error('加载云端信息失败', {
               description: (e as Error).message || '请检查网络连接和 WebDAV 配置'
@@ -81,21 +97,25 @@ export function SyncView() {
             setCloudCount(0)
             setCloudMeta(null)
         } finally {
-            setLoading(false)
+            if (!signal?.aborted) setLoading(false)
         }
       } else {
         setLoading(false)
       }
     } catch (e) { 
+      if (signal?.aborted) return
       console.error('Failed to load counts:', e)
       setLoading(false) 
     }
   }
 
   // 注意：WebDAV 用户名/密码是异步从 storage 读取的。
-  // 如果这里只依赖 webdavUrl，会出现「URL 先加载 → 立刻发请求但账号/密码还是空」的情况，导致首次 401，
-  // 进而触发缓存空列表，看起来就像“后续没有任何网络请求”。
-  useEffect(() => { loadCounts(); loadSnapshots() }, [webdavUrl, username, password, lastSyncTime])
+  // 如果这里只依赖 webdavUrl，会出现「URL 先加载 → 立刻发请求但账号/密码还是空」的情况，导致首次 401。
+  useEffect(() => {
+    const signal = { aborted: false }
+    loadCounts(signal); loadSnapshots()
+    return () => { signal.aborted = true }
+  }, [webdavUrl, username, password, syncState?.time])
 
   // 加载本地快照列表
   const loadSnapshots = async () => {
@@ -273,7 +293,7 @@ export function SyncView() {
               const { resetScheduledSync } = await import('../background/autoSync')
               await resetScheduledSync()
               
-              setTimeout(() => setMsg(''), 3000)
+              scheduleMsgClear()
           } else {
               if (result.message === '同步正在进行中') {
                   toast.info('同步正在进行中，请稍后重试')
@@ -318,7 +338,7 @@ export function SyncView() {
           setSyncStatus('error')
           setMsg('上传失败')
       } finally {
-          setTimeout(() => { if(syncStatus !== 'error') setMsg('') }, 3000)
+          if(syncStatus !== 'error') scheduleMsgClear()
       }
   }
 
@@ -381,7 +401,7 @@ export function SyncView() {
           setMsg('恢复失败')
           toast.error('恢复失败', { description: (e as Error).message })
       } finally {
-          setTimeout(() => { if(syncStatus !== 'error') setMsg('') }, 3000)
+          if(syncStatus !== 'error') scheduleMsgClear()
       }
   }
 

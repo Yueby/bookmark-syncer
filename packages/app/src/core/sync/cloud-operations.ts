@@ -167,7 +167,13 @@ export async function restoreFromCloudBackup(
     
     const fileName = backupPath.split("/").pop() || "";
 
-    const cloudData = JSON.parse(json) as CloudBackup;
+    let cloudData: CloudBackup;
+    try {
+      cloudData = JSON.parse(json) as CloudBackup;
+    } catch {
+      console.error("[CloudOperations] Backup data is corrupted, cannot parse");
+      return { success: false, action: "error", message: "备份数据格式损坏" };
+    }
     const cloudCount = countBookmarks(cloudData.data);
     const cloudTime = cloudData.metadata?.timestamp || 0;
     

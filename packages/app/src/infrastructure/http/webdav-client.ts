@@ -35,12 +35,18 @@ export class WebDAVClient implements IWebDAVClient {
     console.log(`[WebDAVClient] Instance created for ${config.url}`);
   }
 
-  private getHeaders() {
-    const auth = btoa(`${this.config.username}:${this.config.password}`);
+  /**
+   * 基础认证头（所有请求共用）
+   * 不再包含 Content-Type，由各请求方法按需设置
+   */
+  private getAuthHeaders() {
+    // 使用 TextEncoder 处理非 ASCII 字符（如中文用户名/密码）
+    const credentials = `${this.config.username}:${this.config.password}`;
+    const auth = btoa(
+      Array.from(new TextEncoder().encode(credentials), (b) => String.fromCharCode(b)).join("")
+    );
     return {
       Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
-      "X-Requested-With": "XMLHttpRequest",
     };
   }
 
@@ -54,7 +60,7 @@ export class WebDAVClient implements IWebDAVClient {
     const response = await fetch(this.normalizeUrl(""), {
       method: "PROPFIND",
       headers: {
-        ...this.getHeaders(),
+        ...this.getAuthHeaders(),
         Depth: "0",
         Connection: "close",
       },
@@ -67,7 +73,8 @@ export class WebDAVClient implements IWebDAVClient {
     const response = await fetch(this.normalizeUrl(path), {
       method: "PUT",
       headers: {
-        ...this.getHeaders(),
+        ...this.getAuthHeaders(),
+        "Content-Type": "application/octet-stream",
         Connection: "close",
       },
       body: content,
@@ -90,7 +97,7 @@ export class WebDAVClient implements IWebDAVClient {
     const response = await fetch(fullUrl, {
       method: "GET",
       headers: {
-        ...this.getHeaders(),
+        ...this.getAuthHeaders(),
         Connection: "close",
         // 添加缓存控制，确保不使用缓存
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -138,7 +145,7 @@ export class WebDAVClient implements IWebDAVClient {
     const response = await fetch(this.normalizeUrl(path), {
       method: "MKCOL",
       headers: {
-        ...this.getHeaders(),
+        ...this.getAuthHeaders(),
         Connection: "close",
       },
       credentials: "omit",
@@ -156,7 +163,7 @@ export class WebDAVClient implements IWebDAVClient {
       const response = await fetch(this.normalizeUrl(path), {
         method: "PROPFIND",
         headers: {
-          ...this.getHeaders(),
+          ...this.getAuthHeaders(),
           Depth: "0",
           Connection: "close",
         },
@@ -173,7 +180,7 @@ export class WebDAVClient implements IWebDAVClient {
       const response = await fetch(this.normalizeUrl(dirPath), {
         method: "PROPFIND",
         headers: {
-          ...this.getHeaders(),
+          ...this.getAuthHeaders(),
           Depth: "1",
           Connection: "close",
         },
@@ -182,9 +189,7 @@ export class WebDAVClient implements IWebDAVClient {
 
       if (response.status === 401 || response.status === 403) {
         console.warn("[WebDAV] Authentication/permission failed when listing files");
-        // 这里必须抛错：
-        // 1) UI 才能提示“认证失败”，而不是误显示为 0
-        // 2) 上层才能避免把“401 导致的空列表”缓存起来，造成后续看不到任何网络请求
+        // 必须抛错：UI 才能提示"认证失败"，而不是误显示为 0
         throw new Error("WebDAV 认证失败（用户名/密码或权限不正确）");
       }
 
@@ -208,8 +213,7 @@ export class WebDAVClient implements IWebDAVClient {
       const baseUrlPath = baseUrlPathRaw.replace(/\/+$/, "");
 
       // WebDAV 的 XML 命名空间前缀在不同服务端可能是 d:/D:/a:...
-      // 之前用正则硬匹配 <d:response> 会导致部分服务端解析不到文件列表，最终表现为“云端备份显示 0”。
-      // 这里改用 DOMParser，按 localName 解析（忽略命名空间前缀），更健壮。
+      // 改用 DOMParser 按 localName 解析（忽略命名空间前缀），更健壮。
       try {
         const doc = new DOMParser().parseFromString(xml, "application/xml");
         const parserError = doc.getElementsByTagName("parsererror")[0];
@@ -236,7 +240,6 @@ export class WebDAVClient implements IWebDAVClient {
           }
 
           // 移除 base path 前缀，避免重复
-          // 例如：/dav/BookmarkSyncer/xxx -> BookmarkSyncer/xxx
           if (decodedHref.startsWith(baseUrlPath + "/")) {
             decodedHref = decodedHref.substring((baseUrlPath + "/").length);
           } else if (decodedHref === baseUrlPath) {
@@ -250,17 +253,17 @@ export class WebDAVClient implements IWebDAVClient {
 
           const lastModifiedEl = responseEl.getElementsByTagNameNS("*", "getlastmodified")[0];
           const lastModifiedStr = lastModifiedEl?.textContent?.trim() || "";
-          const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
+          const lastModified = lastModifiedStr ? (new Date(lastModifiedStr).getTime() || 0) : 0;
 
           const sizeEl = responseEl.getElementsByTagNameNS("*", "getcontentlength")[0];
           const sizeStr = sizeEl?.textContent?.trim() || "0";
-          const size = parseInt(sizeStr, 10);
+          const size = parseInt(sizeStr, 10) || 0;
 
           if (!name || !decodedHref) continue;
 
           files.push({
             name,
-            path: decodedHref, // 相对路径：BookmarkSyncer/xxx
+            path: decodedHref,
             lastModified,
             size,
           });
@@ -297,13 +300,13 @@ export class WebDAVClient implements IWebDAVClient {
           decodedHref = decodedHref.replace(/^\/+/, "");
           const name = decodedHref.split("/").filter(Boolean).pop() || "";
 
-          const lastModifiedMatch = responseBlock.match(/<\w+:getlastmodified[^>]*>(.*?)<\/\w+:getlastmodified>/i);
+          const lastModifiedMatch = responseBlock.match(/<(?:\w+:)?getlastmodified[^>]*>(.*?)<\/(?:\w+:)?getlastmodified>/i);
           const lastModifiedStr = lastModifiedMatch ? lastModifiedMatch[1].trim() : "";
-          const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
+          const lastModified = lastModifiedStr ? (new Date(lastModifiedStr).getTime() || 0) : 0;
 
-          const sizeMatch = responseBlock.match(/<\w+:getcontentlength[^>]*>(.*?)<\/\w+:getcontentlength>/i);
+          const sizeMatch = responseBlock.match(/<(?:\w+:)?getcontentlength[^>]*>(.*?)<\/(?:\w+:)?getcontentlength>/i);
           const sizeStr = sizeMatch ? sizeMatch[1].trim() : "0";
-          const size = parseInt(sizeStr, 10);
+          const size = parseInt(sizeStr, 10) || 0;
 
           if (!name || !decodedHref) continue;
 
@@ -326,7 +329,7 @@ export class WebDAVClient implements IWebDAVClient {
       return files;
     } catch (error) {
       console.error("[WebDAV] Failed to list files:", error);
-      return [];
+      throw error; // 向上传播错误，不再静默吞掉
     }
   }
 
@@ -334,7 +337,7 @@ export class WebDAVClient implements IWebDAVClient {
     const response = await fetch(this.normalizeUrl(path), {
       method: "DELETE",
       headers: {
-        ...this.getHeaders(),
+        ...this.getAuthHeaders(),
         Connection: "close",
       },
       credentials: "omit",

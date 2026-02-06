@@ -7,10 +7,10 @@ import { generateHash } from "../../infrastructure/utils/crypto";
 import type { BookmarkNode } from "../../types";
 import { isSystemRootFolder, normalizeUrl } from "./normalizer";
 import type {
-  BookmarkLocation,
-  FolderLocation,
-  GlobalIndex,
-  NodeLocation,
+    BookmarkLocation,
+    FolderLocation,
+    GlobalIndex,
+    NodeLocation,
 } from "./types";
 
 /**
@@ -18,7 +18,7 @@ import type {
  * 优化：并行计算所有书签的 hash，提升大量书签时的性能
  */
 export async function buildGlobalIndex(tree: BookmarkNode[]): Promise<GlobalIndex> {
-  const hashToNode = new Map<string, NodeLocation>();
+  const hashToNode = new Map<string, NodeLocation[]>();
   const urlToBookmarks = new Map<string, BookmarkLocation[]>();
   const pathToFolder = new Map<string, FolderLocation>();
   const idToPath = new Map<string, string>();
@@ -95,8 +95,9 @@ export async function buildGlobalIndex(tree: BookmarkNode[]): Promise<GlobalInde
       url: normalizedUrl,
     };
 
-    // Hash 索引（主要匹配方式）
-    hashToNode.set(hash, {
+    // Hash 索引（主要匹配方式，同 hash 可能有多个节点）
+    const hashList = hashToNode.get(hash) || [];
+    hashList.push({
       id: node.id,
       hash,
       parentId,
@@ -105,6 +106,7 @@ export async function buildGlobalIndex(tree: BookmarkNode[]): Promise<GlobalInde
       url: normalizedUrl,
       isFolder: false,
     });
+    hashToNode.set(hash, hashList);
 
     // URL 索引（兜底匹配）
     const existing = urlToBookmarks.get(normalizedUrl) || [];
@@ -140,26 +142,35 @@ function findNodeByHash(
   localChildren: BookmarkNode[],
   processedLocalIds: Set<string>,
 ): BookmarkNode | undefined {
-  const hashMatch = localIndex.hashToNode.get(hash);
-  if (!hashMatch || !hashMatch.id || processedLocalIds.has(hashMatch.id)) {
+  const hashMatches = localIndex.hashToNode.get(hash);
+  if (!hashMatches || hashMatches.length === 0) {
     return undefined;
   }
 
-  // 先尝试从本地子节点获取完整信息
-  const localNode = localChildren.find((l) => l.id === hashMatch.id);
-  if (localNode) {
-    return localNode;
+  // 从匹配列表中找到第一个未被处理过的节点
+  for (const hashMatch of hashMatches) {
+    if (!hashMatch.id || processedLocalIds.has(hashMatch.id)) {
+      continue;
+    }
+
+    // 先尝试从本地子节点获取完整信息
+    const localNode = localChildren.find((l) => l.id === hashMatch.id);
+    if (localNode) {
+      return localNode;
+    }
+
+    // 节点不在当前文件夹，从全局索引构建基本信息
+    return {
+      id: hashMatch.id,
+      title: hashMatch.title,
+      url: hashMatch.url,
+      parentId: hashMatch.parentId,
+      index: hashMatch.index,
+      children: hashMatch.isFolder ? [] : undefined,
+    };
   }
 
-  // 节点不在当前文件夹，从全局索引构建基本信息
-  return {
-    id: hashMatch.id,
-    title: hashMatch.title,
-    url: hashMatch.url,
-    parentId: hashMatch.parentId,
-    index: hashMatch.index,
-    children: hashMatch.isFolder ? [] : undefined,
-  };
+  return undefined;
 }
 
 /**
@@ -541,7 +552,8 @@ export async function mergeNodes(parentId: string, nodes: BookmarkNode[]): Promi
 
   for (const node of nodes) {
     if (node.url) {
-      const exists = localChildren.some((local) => local.url === node.url);
+      const normalizedNodeUrl = normalizeUrl(node.url);
+      const exists = localChildren.some((local) => normalizeUrl(local.url) === normalizedNodeUrl);
       if (!exists) {
         try {
           await BrowserBookmarksAPI.create({

@@ -1,15 +1,17 @@
-import { useState } from 'react'
-import { LayoutWrapper } from './components/LayoutWrapper'
-import { TabNav } from './components/TabNav'
-import { SyncView } from './components/SyncView'
-import { SettingsView } from './components/SettingsView'
-import { Toaster } from './components/Toaster'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useState } from 'react'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { LayoutWrapper } from './components/LayoutWrapper'
+import { SettingsView } from './components/SettingsView'
+import { SyncView } from './components/SyncView'
+import { TabNav } from './components/TabNav'
+import { Toaster } from './components/Toaster'
 
 function App() {
   const [activeTab, setActiveTab] = useState<'sync' | 'settings'>('sync')
 
   return (
+    <ErrorBoundary>
     <LayoutWrapper>
       {/* Top Nav */}
       <div className="pt-6 pb-2 px-4 z-20">
@@ -35,6 +37,7 @@ function App() {
       {/* Toast Notifications */}
       <Toaster position="bottom-center" duration={2000} />
     </LayoutWrapper>
+    </ErrorBoundary>
   )
 }
 
