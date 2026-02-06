@@ -10,6 +10,13 @@ import { LOCK_TIMEOUT_MS, SYNC_LOCK_KEY, SyncLock } from "./types";
  */
 export class SyncLockManager {
   /**
+   * 记录当前实例获取的 lockId
+   * 用于释放时精确验证，防止意外释放其他操作持有的锁
+   * 注意：MV3 Service Worker 重启后此值会丢失，release 有降级逻辑
+   */
+  private activeLockId: string | null = null;
+
+  /**
    * 尝试获取同步锁
    * 使用 lockId 机制防止并发获取时的竞态条件
    */
@@ -54,7 +61,8 @@ export class SyncLockManager {
       const verifyLock = verifyResult[SYNC_LOCK_KEY] as SyncLock | undefined;
 
       if (verifyLock?.lockId === lockId) {
-        console.log(`[SyncLockManager] Lock acquired by "${holder}"`);
+        this.activeLockId = lockId;
+        console.log(`[SyncLockManager] Lock acquired by "${holder}" (lockId: ${lockId.slice(-8)})`);
         return true;
       }
 
@@ -69,7 +77,8 @@ export class SyncLockManager {
 
   /**
    * 释放同步锁
-   * 只有锁的持有者才能释放
+   * 验证 holder 和 lockId 双重匹配，防止意外释放其他操作的锁
+   * 降级逻辑：如果 activeLockId 不可用（如 SW 重启后），仅验证 holder
    */
   async release(holder: string): Promise<void> {
     try {
@@ -78,19 +87,34 @@ export class SyncLockManager {
 
       if (!existingLock) {
         console.log(`[SyncLockManager] No lock to release for "${holder}"`);
+        this.activeLockId = null;
         return;
       }
 
-      if (existingLock.holder === holder) {
-        await browser.storage.local.remove(SYNC_LOCK_KEY);
-        console.log(`[SyncLockManager] Lock released by "${holder}"`);
-      } else {
+      // 验证持有者
+      if (existingLock.holder !== holder) {
         console.warn(
           `[SyncLockManager] Lock held by "${existingLock.holder}", cannot release by "${holder}"`,
         );
+        return;
       }
+
+      // 精确验证 lockId（如果可用）
+      if (this.activeLockId && existingLock.lockId !== this.activeLockId) {
+        console.warn(
+          `[SyncLockManager] LockId mismatch: expected ${this.activeLockId.slice(-8)}, got ${existingLock.lockId.slice(-8)}. Another "${holder}" operation may have acquired a new lock.`,
+        );
+        // 不释放：同一个 holder 的另一个操作已经获取了新锁
+        this.activeLockId = null;
+        return;
+      }
+
+      await browser.storage.local.remove(SYNC_LOCK_KEY);
+      this.activeLockId = null;
+      console.log(`[SyncLockManager] Lock released by "${holder}"`);
     } catch (error) {
       console.error("[SyncLockManager] Failed to release lock:", error);
+      this.activeLockId = null;
     }
   }
 }

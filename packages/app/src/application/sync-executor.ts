@@ -66,7 +66,7 @@ export async function executeUpload(): Promise<void> {
         
         if (!pullResult.success) {
           console.warn(`[SyncExecutor] Pull before upload failed: ${pullResult.message}`);
-          await setIsRestoring(false);
+          // 不在此处重置 restoring，由 finally 中的 Alarm 统一处理
           return;
         }
         

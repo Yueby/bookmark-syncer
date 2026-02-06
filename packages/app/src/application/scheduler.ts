@@ -4,7 +4,7 @@
  */
 import browser from "webextension-polyfill";
 import { handleDebounceAlarm } from "./bookmark-monitor";
-import { ALARM_NAME, RESET_RESTORING_ALARM } from "./constants";
+import { ALARM_NAME, DEBOUNCE_ALARM, RESET_RESTORING_ALARM } from "./constants";
 import { getWebDAVConfig, setIsRestoring } from "./state-manager";
 import { executeAutoPull } from "./sync-executor";
 
@@ -41,14 +41,15 @@ export async function startScheduledSync(): Promise<void> {
       console.log("[Scheduler] Scheduled sync interval changed, recreating alarm");
     }
 
-    // 创建周期性定时器
+    // 创建周期性定时器（首次触发设为 1 分钟后，后续按周期执行）
+    const FIRST_TRIGGER_DELAY_MS = 60 * 1000; // 1 分钟
     await browser.alarms.create(ALARM_NAME, {
       periodInMinutes: scheduledSyncInterval,
-      when: Date.now() + scheduledSyncInterval * 60 * 1000, // 首次触发时间
+      when: Date.now() + FIRST_TRIGGER_DELAY_MS,
     });
 
     console.log(
-      `[Scheduler] Scheduled sync started (every ${scheduledSyncInterval}min)`,
+      `[Scheduler] Scheduled sync started (first in 1min, then every ${scheduledSyncInterval}min)`,
     );
   } catch (error) {
     console.error("[Scheduler] Failed to start scheduled sync:", error);
@@ -157,7 +158,7 @@ export function registerAlarmListener(): void {
       console.log(`[Scheduler] Alarm triggered: ${alarm.name}`);
 
       switch (alarm.name) {
-        case "autoSyncDebounce":
+        case DEBOUNCE_ALARM:
           // 防抖上传
           await handleDebounceAlarm(alarm);
           break;

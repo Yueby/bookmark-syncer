@@ -60,8 +60,8 @@ export interface FolderLocation {
  * 用于快速查找和匹配书签节点
  */
 export interface GlobalIndex {
-  /** Hash -> 节点信息（主要匹配方式） */
-  hashToNode: Map<string, NodeLocation>;
+  /** Hash -> 节点信息列表（同 URL+title 可能出现在多个文件夹） */
+  hashToNode: Map<string, NodeLocation[]>;
   
   /** URL -> 书签列表（兜底匹配，可能有多个相同 URL） */
   urlToBookmarks: Map<string, BookmarkLocation[]>;

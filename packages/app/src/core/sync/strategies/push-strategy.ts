@@ -21,13 +21,18 @@ const DIR = STORAGE_CONSTANTS.BACKUP_DIR;
 
 /**
  * 智能上传：检查内容差异，只有真正有变化时才上传
+ * @param config WebDAV 配置
+ * @param lockHolder 锁持有者标识
+ * @param options.skipLock 是否跳过锁管理（由上层 smartSync 传递锁时使用）
  */
 export async function smartPush(
   config: WebDAVConfig,
   lockHolder: string,
+  options?: { skipLock?: boolean },
 ): Promise<SyncResult> {
   const startTime = Date.now();
-  console.log(`[PushStrategy] Starting push by "${lockHolder}"`);
+  const skipLock = options?.skipLock ?? false;
+  console.log(`[PushStrategy] Starting push by "${lockHolder}"${skipLock ? ' (lock inherited)' : ''}`);
 
   // 检查网络
   if (!navigator.onLine) {
@@ -35,11 +40,13 @@ export async function smartPush(
     return { success: false, action: "error", message: "网络断开" };
   }
 
-  // 获取锁
-  const lockAcquired = await acquireSyncLock(lockHolder);
-  if (!lockAcquired) {
-    console.warn("[PushStrategy] Push aborted: lock not acquired");
-    return { success: false, action: "error", message: "同步正在进行中" };
+  // 获取锁（如果上层未传递锁）
+  if (!skipLock) {
+    const lockAcquired = await acquireSyncLock(lockHolder);
+    if (!lockAcquired) {
+      console.warn("[PushStrategy] Push aborted: lock not acquired");
+      return { success: false, action: "error", message: "同步正在进行中" };
+    }
   }
 
   try {
@@ -77,7 +84,13 @@ export async function smartPush(
       if (latestBackupPath) {
         const cloudJson = await queueManager.getFileWithDedup(client, latestBackupPath);
         if (cloudJson) {
-          const cloudData = JSON.parse(cloudJson) as CloudBackup;
+          let cloudData: CloudBackup;
+          try {
+            cloudData = JSON.parse(cloudJson) as CloudBackup;
+          } catch {
+            console.error("[PushStrategy] Cloud data is corrupted, skipping comparison");
+            throw new Error("云端备份数据格式损坏，无法解析");
+          }
           const cloudCount = countBookmarks(cloudData.data);
           const cloudTime = cloudData.metadata?.timestamp || 0;
 
@@ -166,6 +179,16 @@ export async function smartPush(
     console.log("[PushStrategy] Uploading to cloud...");
     const backup = await bookmarkRepository.createCloudBackup();
 
+    // 验证 backup 数据完整性
+    if (!backup || !backup.data || !backup.metadata) {
+      console.error("[PushStrategy] Invalid backup data: missing data or metadata");
+      return { success: false, action: "error", message: "生成的备份数据无效" };
+    }
+    if (!Array.isArray(backup.data) || backup.data.length === 0) {
+      console.error("[PushStrategy] Invalid backup data: empty bookmark tree");
+      return { success: false, action: "error", message: "书签数据为空，无法上传" };
+    }
+
     // 确保目录存在
     if (!(await client.exists(DIR))) {
       console.log(`[PushStrategy] Creating directory: ${DIR}`);
@@ -189,18 +212,13 @@ export async function smartPush(
     const browserInfo = getBrowserInfo();
     const bookmarkCount = countBookmarks(backup.data);
     
+    // 记录需要在上传后清理的旧文件路径
+    let oldFileToDelete: string | null = null;
+
     // 判断是否在时间窗口内
     if (lastBackupInfo && (now - lastBackupInfo.createdAt) < backupIntervalMs) {
-      // 时间窗口内：删除旧文件，创建新文件（更新书签数量）
+      // 时间窗口内：创建新文件替换旧文件（先传后删，保证原子性）
       console.log(`[PushStrategy] Within time window (${backupIntervalMinutes}min), replacing: ${lastBackupInfo.fileName}`);
-      
-      // 删除旧文件
-      try {
-        await client.deleteFile(lastBackupInfo.filePath);
-        console.log(`[PushStrategy] Deleted old file: ${lastBackupInfo.fileName}`);
-      } catch (error) {
-        console.warn(`[PushStrategy] Failed to delete old file (will overwrite):`, error);
-      }
       
       // 生成新文件名（书签数量会更新）
       targetFileName = fileManager.generateBackupFileName(
@@ -211,6 +229,7 @@ export async function smartPush(
       targetFilePath = `${DIR}/${targetFileName}`;
       revisionNumber = lastBackupInfo.revisionNumber + 1;
       isNewFile = false;  // 逻辑上还是覆盖（不触发清理旧文件）
+      oldFileToDelete = lastBackupInfo.filePath; // 上传成功后再删除旧文件
     } else {
       // 时间窗口外：创建新文件
       console.log("[PushStrategy] Time window expired, creating new backup file");
@@ -242,16 +261,32 @@ export async function smartPush(
 
     console.log(`[PushStrategy] ${isNewFile ? 'Creating new backup' : 'Overwriting existing backup'}: ${finalFileName} (revision ${revisionNumber})`);
     
-    // 上传文件（覆盖或创建）
+    // 上传新文件（先传）
     await client.putFile(targetFilePath, fileContent);
 
-    // 保存最后备份文件信息
-    await saveLastBackupFileInfo({
-      fileName: finalFileName,
-      filePath: targetFilePath,
-      createdAt: isNewFile ? now : (lastBackupInfo?.createdAt || now), // 保持原创建时间
-      revisionNumber: revisionNumber,
-    });
+    // 上传成功后删除旧文件（后删，保证至少有一个有效备份存在）
+    if (oldFileToDelete) {
+      try {
+        await client.deleteFile(oldFileToDelete);
+        console.log(`[PushStrategy] Deleted old file: ${oldFileToDelete}`);
+      } catch (error) {
+        console.warn(`[PushStrategy] Failed to delete old file (non-critical):`, error);
+        // 旧文件删除失败不影响同步结果，下次清理会处理
+      }
+    }
+
+    // 保存最后备份文件信息（必须先于 setSyncState，保证状态一致性）
+    try {
+      await saveLastBackupFileInfo({
+        fileName: finalFileName,
+        filePath: targetFilePath,
+        createdAt: isNewFile ? now : (lastBackupInfo?.createdAt || now), // 保持原创建时间
+        revisionNumber: revisionNumber,
+      });
+    } catch (error) {
+      console.error(`[PushStrategy] Failed to save backup file info:`, error);
+      // 文件已上传但元数据保存失败，不影响同步结果
+    }
 
     console.log(`[PushStrategy] Backup saved: ${targetFilePath} (revision ${revisionNumber})`);
     
@@ -283,6 +318,8 @@ export async function smartPush(
       message: errorMessage,
     };
   } finally {
-    await releaseSyncLock(lockHolder);
+    if (!skipLock) {
+      await releaseSyncLock(lockHolder);
+    }
   }
 }

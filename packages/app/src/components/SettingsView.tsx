@@ -67,6 +67,12 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
       const trimmedUrl = webdavUrl.trim();
       const trimmedUsername = username.trim();
       const trimmedPassword = password.trim();
+
+      // URL 基本格式校验
+      if (trimmedUrl && !/^https?:\/\/.+/i.test(trimmedUrl)) {
+        toast.error('URL 格式无效', { description: '请输入以 http:// 或 https:// 开头的地址' })
+        return;
+      }
       
       // 检查配置是否变更（用于决定是否需要自动备份）
       const previousUrl = webdavUrl.trim();
@@ -234,7 +240,7 @@ function SyncSettingsPage({ onBack }: { onBack: () => void }) {
               value={scheduledSyncInterval}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10)
-                if (val >= 1 && val <= 1440) setScheduledSyncInterval(val)
+                if (!isNaN(val) && val >= 1 && val <= 1440) setScheduledSyncInterval(val)
               }}
               placeholder="30"
             />
