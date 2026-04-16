@@ -4,6 +4,7 @@
  */
 import { getWebDAVClient } from "../../infrastructure/http/webdav-client";
 import { CloudBackup } from "../../types";
+import { holdRestoringUntil, setIsRestoring } from "../../application/state-manager";
 import { snapshotManager } from "../backup";
 import { bookmarkRepository, countBookmarks } from "../bookmark";
 import { fileManager, STORAGE_CONSTANTS } from "../storage";
@@ -136,6 +137,8 @@ export async function restoreFromCloudBackup(
   }
 
   try {
+    await setIsRestoring(true);
+
     const client = getWebDAVClient(config);
 
     // 路径问题已修复，理论上不再需要智能等待
@@ -209,6 +212,8 @@ export async function restoreFromCloudBackup(
       message: errorMessage,
     };
   } finally {
+    await holdRestoringUntil();
+
     await releaseSyncLock(lockHolder);
   }
 }

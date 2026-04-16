@@ -5,7 +5,17 @@
 import browser from "webextension-polyfill";
 import type { LastBackupFileInfo } from "../core/storage/types";
 import { STORAGE_CONSTANTS } from "../core/storage/types";
-import { RESTORING_KEY, RESTORING_TIMEOUT_MS } from "./constants";
+import { RESET_RESTORING_DELAY_MS, RESTORING_KEY, RESTORING_TIMEOUT_MS } from "./constants";
+
+type RestoringState = {
+  value: boolean;
+  timestamp: number;
+  until?: number;
+};
+
+function getRestoringStorageArea(): typeof browser.storage.local | typeof browser.storage.session {
+  return browser.storage.session ?? browser.storage.local;
+}
 
 /**
  * 检查是否正在执行恢复操作
@@ -13,20 +23,24 @@ import { RESTORING_KEY, RESTORING_TIMEOUT_MS } from "./constants";
  */
 export async function getIsRestoring(): Promise<boolean> {
   try {
-    // Firefox 不支持 storage.session，此时返回 false
-    if (!browser.storage.session) {
-      return false;
-    }
-
-    const result = await browser.storage.session.get(RESTORING_KEY);
-    const state = result[RESTORING_KEY] as
-      | { value: boolean; timestamp: number }
-      | undefined;
+    const storageArea = getRestoringStorageArea();
+    const result = await storageArea.get(RESTORING_KEY);
+    const state = result[RESTORING_KEY] as RestoringState | undefined;
 
     if (!state) return false;
 
-    // 检查超时（防止异常情况下状态一直锁定）
     const now = Date.now();
+
+    if (typeof state.until === "number") {
+      if (now >= state.until) {
+        await setIsRestoring(false);
+        return false;
+      }
+
+      return state.value;
+    }
+
+    // 检查超时（防止异常情况下状态一直锁定）
     if (now - state.timestamp > RESTORING_TIMEOUT_MS) {
       console.warn(
         `[StateManager] Restoring state timeout (${now - state.timestamp}ms), auto clearing`,
@@ -47,13 +61,10 @@ export async function getIsRestoring(): Promise<boolean> {
  */
 export async function setIsRestoring(value: boolean): Promise<void> {
   try {
-    if (!browser.storage.session) {
-      console.warn("[StateManager] storage.session not supported");
-      return;
-    }
+    const storageArea = getRestoringStorageArea();
 
     if (value) {
-      await browser.storage.session.set({
+      await storageArea.set({
         [RESTORING_KEY]: {
           value: true,
           timestamp: Date.now(),
@@ -61,11 +72,32 @@ export async function setIsRestoring(value: boolean): Promise<void> {
       });
       console.log("[StateManager] Restoring state activated");
     } else {
-      await browser.storage.session.remove(RESTORING_KEY);
+      await storageArea.remove(RESTORING_KEY);
       console.log("[StateManager] Restoring state cleared");
     }
   } catch (error) {
     console.error("[StateManager] Failed to set restoring state:", error);
+  }
+}
+
+/**
+ * 在恢复结束后保留一个短暂阻塞窗口，避免收尾事件立即触发同步
+ */
+export async function holdRestoringUntil(delayMs = RESET_RESTORING_DELAY_MS): Promise<void> {
+  try {
+    const storageArea = getRestoringStorageArea();
+    const now = Date.now();
+    await storageArea.set({
+      [RESTORING_KEY]: {
+        value: true,
+        timestamp: now,
+        until: now + delayMs,
+      } satisfies RestoringState,
+    });
+    console.log(`[StateManager] Restoring hold scheduled for ${delayMs}ms`);
+  } catch (error) {
+    console.error("[StateManager] Failed to hold restoring state:", error);
+    await setIsRestoring(false);
   }
 }
 

@@ -3,7 +3,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus'
 
 import { motion } from 'framer-motion'
 import { AlertTriangle, Cloud, Download, FilePlus, History, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
-import { clearLastBackupFileInfo } from '../application/state-manager'
+import { clearLastBackupFileInfo, holdRestoringUntil, setIsRestoring } from '../application/state-manager'
 import { snapshotManager, type Snapshot } from '../core/backup'
 import { bookmarkRepository, countBookmarks } from '../core/bookmark'
 import { getCloudBackupList, getCloudInfo, restoreFromCloudBackup, smartPull, smartPush, smartSync, type CloudBackupFile } from '../core/sync'
@@ -207,6 +207,8 @@ export function SyncView() {
     setDrawerOpen(false)
     
     try {
+            await setIsRestoring(true)
+
       // 先备份当前状态（本地快照恢复前）
       const currentTree = await bookmarkRepository.getTree()
       const currentCount = countBookmarks(currentTree)
@@ -224,6 +226,8 @@ export function SyncView() {
       setMsg('恢复失败')
       toast.error('恢复失败', { description: (e as Error).message })
     } finally {
+            await holdRestoringUntil()
+
       setPendingRestoreSnapshot(null)
     }
   }

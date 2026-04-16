@@ -4,8 +4,8 @@
  */
 import browser from "webextension-polyfill";
 import { handleDebounceAlarm } from "./bookmark-monitor";
-import { ALARM_NAME, DEBOUNCE_ALARM, RESET_RESTORING_ALARM } from "./constants";
-import { getWebDAVConfig, setIsRestoring } from "./state-manager";
+import { ALARM_NAME, DEBOUNCE_ALARM } from "./constants";
+import { getWebDAVConfig } from "./state-manager";
 import { executeAutoPull } from "./sync-executor";
 
 /**
@@ -166,12 +166,6 @@ export function registerAlarmListener(): void {
         case ALARM_NAME:
           // 定时同步
           await handleScheduledAlarm(alarm);
-          break;
-
-        case RESET_RESTORING_ALARM:
-          // 重置恢复状态
-          console.log("[Scheduler] Resetting restoring state");
-          await setIsRestoring(false);
           break;
 
         default:
