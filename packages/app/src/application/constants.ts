@@ -11,9 +11,6 @@ export const ALARM_NAME = "scheduledSync";
 /** 防抖闹钟名称 */
 export const DEBOUNCE_ALARM = "autoSyncDebounce";
 
-/** 重置恢复状态闹钟名称 */
-export const RESET_RESTORING_ALARM = "resetRestoring";
-
 /** storage.session 中的恢复状态键 */
 export const RESTORING_KEY = "isRestoring";
 

@@ -6,8 +6,6 @@ import browser from "webextension-polyfill";
 import { getCloudInfo, smartPull, smartPush, type SyncState } from "../core/sync";
 import {
     LOCK_HOLDER_AUTO,
-    RESET_RESTORING_ALARM,
-    RESET_RESTORING_DELAY_MS,
     SYNC_STATE_KEY,
 } from "./constants";
 import { getIsRestoring, getWebDAVConfig, setIsRestoring } from "./state-manager";
@@ -56,27 +54,15 @@ export async function executeUpload(): Promise<void> {
       console.log(
         `[SyncExecutor] Cloud has updates, pulling first (cloud: ${new Date(cloudTime).toISOString()}, local: ${new Date(lastSyncTime).toISOString()})`,
       );
-      
-      // 标记正在恢复，避免拉取过程中触发新的上传
-      await setIsRestoring(true);
-      
-      try {
-        // 使用 merge 模式：保留本地新增的书签
-        const pullResult = await smartPull(config, LOCK_HOLDER_AUTO, "merge");
-        
-        if (!pullResult.success) {
-          console.warn(`[SyncExecutor] Pull before upload failed: ${pullResult.message}`);
-          // 不在此处重置 restoring，由 finally 中的 Alarm 统一处理
-          return;
-        }
-        
-        console.log("[SyncExecutor] Pull completed, now uploading merged result...");
-      } finally {
-        // 使用 Alarm 延迟重置恢复标志
-        await browser.alarms.create(RESET_RESTORING_ALARM, {
-          when: Date.now() + RESET_RESTORING_DELAY_MS,
-        });
+      // 使用 merge 模式：保留本地新增的书签
+      const pullResult = await smartPull(config, LOCK_HOLDER_AUTO, "merge");
+
+      if (!pullResult.success) {
+        console.warn(`[SyncExecutor] Pull before upload failed: ${pullResult.message}`);
+        return;
       }
+
+      console.log("[SyncExecutor] Pull completed, now uploading merged result...");
     }
 
     console.log("[SyncExecutor] Starting upload...");
@@ -151,23 +137,12 @@ export async function executeAutoPull(): Promise<void> {
       `[SyncExecutor] Cloud update detected (${cloudInfo.totalCount} bookmarks from ${cloudInfo.browser || "unknown"})`,
     );
 
-    // 标记正在恢复，阻止书签变化事件触发上传
-    await setIsRestoring(true);
+    const pullResult = await smartPull(config, LOCK_HOLDER_AUTO, "overwrite");
 
-    try {
-      const pullResult = await smartPull(config, LOCK_HOLDER_AUTO, "overwrite");
-
-      if (pullResult.success) {
-        console.log(`[SyncExecutor] Pull ${pullResult.action}: ${pullResult.message}`);
-      } else {
-        console.warn(`[SyncExecutor] Pull failed: ${pullResult.message}`);
-      }
-    } finally {
-      // 使用 Alarm 延迟重置恢复标志（避免 setTimeout 在 SW 休眠后丢失）
-      // 延迟时间足够长，确保书签恢复操作完全完成
-      await browser.alarms.create(RESET_RESTORING_ALARM, {
-        when: Date.now() + RESET_RESTORING_DELAY_MS,
-      });
+    if (pullResult.success) {
+      console.log(`[SyncExecutor] Pull ${pullResult.action}: ${pullResult.message}`);
+    } else {
+      console.warn(`[SyncExecutor] Pull failed: ${pullResult.message}`);
     }
   } catch (error) {
     console.error("[SyncExecutor] Pull error:", error);

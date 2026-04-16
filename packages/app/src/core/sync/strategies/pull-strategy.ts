@@ -4,6 +4,7 @@
  */
 import { getWebDAVClient } from "../../../infrastructure/http/webdav-client";
 import { CloudBackup } from "../../../types";
+import { holdRestoringUntil, setIsRestoring } from "../../../application/state-manager";
 import { snapshotManager } from "../../backup";
 import { bookmarkRepository, countBookmarks } from "../../bookmark";
 import type { WebDAVConfig } from "../../storage";
@@ -46,6 +47,8 @@ export async function smartPull(
   }
 
   try {
+    await setIsRestoring(true);
+
     const client = getWebDAVClient(config);
 
     // 0. 创建本地快照（下载前备份）
@@ -128,6 +131,8 @@ export async function smartPull(
       message: errorMessage,
     };
   } finally {
+    await holdRestoringUntil();
+
     if (!skipLock) {
       await releaseSyncLock(lockHolder);
     }

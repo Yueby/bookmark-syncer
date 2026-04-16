@@ -173,6 +173,27 @@ function findNodeByHash(
   return undefined;
 }
 
+function normalizeTitle(title: string | undefined): string {
+  return title?.trim() || "";
+}
+
+function getBookmarkIdentityKeys(
+  node: BookmarkNode,
+  normalizedUrl = normalizeUrl(node.url),
+): string[] {
+  const keys = [`bookmark:${normalizedUrl}|${normalizeTitle(node.title)}`];
+
+  if (node.hash) {
+    keys.unshift(`hash:${node.hash}`);
+  }
+
+  return keys;
+}
+
+function getFolderIdentityKey(node: BookmarkNode): string {
+  return `folder:${normalizeTitle(node.title)}`;
+}
+
 /**
  * 递归创建子节点
  */
@@ -233,14 +254,18 @@ export async function smartSync(
   );
 
   // 获取当前本地文件夹的子节点
-  const localChildren = (await BrowserBookmarksAPI.getChildren(
+  const localChildren = [...((await BrowserBookmarksAPI.getChildren(
     localParentId,
-  )) as BookmarkNode[];
+  )) as BookmarkNode[])];
 
   console.log(`[Merger] Local folder has ${localChildren.length} children`);
 
   // 已处理的本地 ID（防止重复处理）
   const processedLocalIds = new Set<string>();
+  // 同一文件夹内已处理的云端书签身份（防止不可区分的重复项继续创建）
+  const processedBookmarkKeys = new Set<string>();
+  // 同一文件夹内已确定目标的文件夹（允许后续同名文件夹复用同一目标）
+  const folderTargets = new Map<string, BookmarkNode>();
   // 已使用的 URL（用于检测重复）
   const usedUrls = new Set<string>();
 
@@ -261,6 +286,15 @@ export async function smartSync(
     if (cloudNode.url) {
       // === 处理书签 ===
       const normalizedUrl = normalizeUrl(cloudNode.url);
+      const bookmarkIdentityKeys = getBookmarkIdentityKeys(cloudNode, normalizedUrl);
+
+      if (bookmarkIdentityKeys.some((key) => processedBookmarkKeys.has(key))) {
+        console.log(
+          `[Merger] Skipping duplicate cloud bookmark "${cloudNode.title}" in "${localParentPath}"`,
+        );
+        continue;
+      }
+
       let matchedLocal: BookmarkNode | undefined;
 
       // 1. 优先通过 Hash 匹配（最可靠）
@@ -305,6 +339,9 @@ export async function smartSync(
 
       if (matchedLocal && matchedLocal.id) {
         processedLocalIds.add(matchedLocal.id);
+        for (const key of bookmarkIdentityKeys) {
+          processedBookmarkKeys.add(key);
+        }
         usedUrls.add(normalizedUrl);
 
         // 检查是否需要更新
@@ -371,6 +408,10 @@ export async function smartSync(
           });
           if (newBookmark.id) {
             processedLocalIds.add(newBookmark.id); // 记录新创建的 ID，防止 Phase 3 误删
+            localChildren.push(newBookmark as BookmarkNode);
+            for (const key of bookmarkIdentityKeys) {
+              processedBookmarkKeys.add(key);
+            }
             stats.bookmarksCreated++;
           }
         } catch (error) {
@@ -385,6 +426,19 @@ export async function smartSync(
       const cloudFolderPath = localParentPath
         ? `${localParentPath}/${cloudNode.title}`
         : cloudNode.title;
+      const folderIdentityKey = getFolderIdentityKey(cloudNode);
+      const existingTarget = folderTargets.get(folderIdentityKey);
+
+      if (existingTarget?.id) {
+        await smartSync(
+          existingTarget.id,
+          cloudNode.children,
+          localIndex,
+          cloudFolderPath,
+        );
+        continue;
+      }
+
       let matchedFolder: BookmarkNode | undefined;
 
       // 1. 先在当前文件夹找同名文件夹（简单匹配）
@@ -412,6 +466,7 @@ export async function smartSync(
 
       if (matchedFolder && matchedFolder.id) {
         processedLocalIds.add(matchedFolder.id);
+        folderTargets.set(folderIdentityKey, matchedFolder);
 
         // 更新标题（如果改名了）
         if ((matchedFolder.title?.trim() || "") !== (cloudNode.title?.trim() || "")) {
@@ -471,10 +526,18 @@ export async function smartSync(
           });
           if (created.id) {
             processedLocalIds.add(created.id); // 记录新创建的 ID，防止 Phase 3 误删
+            const createdFolder = { ...(created as BookmarkNode), children: [] };
+            localChildren.push(createdFolder);
+            folderTargets.set(folderIdentityKey, createdFolder);
             stats.foldersCreated++;
 
-            // 递归创建子节点
-            await createChildren(created.id, cloudNode.children);
+            // 继续走 smartSync，让新建文件夹的子节点也受同轮去重保护
+            await smartSync(
+              created.id,
+              cloudNode.children,
+              localIndex,
+              cloudFolderPath,
+            );
           }
         } catch (error) {
           console.warn(
@@ -547,7 +610,7 @@ export async function smartSync(
  * 用于保守的合并策略
  */
 export async function mergeNodes(parentId: string, nodes: BookmarkNode[]): Promise<void> {
-  const localChildren = await BrowserBookmarksAPI.getChildren(parentId);
+  const localChildren = [...((await BrowserBookmarksAPI.getChildren(parentId)) as BookmarkNode[])];
   let addedCount = 0;
 
   for (const node of nodes) {
@@ -556,12 +619,13 @@ export async function mergeNodes(parentId: string, nodes: BookmarkNode[]): Promi
       const exists = localChildren.some((local) => normalizeUrl(local.url) === normalizedNodeUrl);
       if (!exists) {
         try {
-          await BrowserBookmarksAPI.create({
+          const createdBookmark = await BrowserBookmarksAPI.create({
             parentId,
             title: node.title,
             url: node.url,
             index: node.index,
           });
+          localChildren.push(createdBookmark as BookmarkNode);
           addedCount++;
         } catch (error) {
           console.warn(
@@ -575,7 +639,7 @@ export async function mergeNodes(parentId: string, nodes: BookmarkNode[]): Promi
         (local) => !local.url && local.title === node.title,
       );
 
-      if (existingFolder) {
+      if (existingFolder?.id) {
         if (node.children && node.children.length > 0) {
           await mergeNodes(existingFolder.id, node.children);
         }
@@ -586,10 +650,11 @@ export async function mergeNodes(parentId: string, nodes: BookmarkNode[]): Promi
             title: node.title,
             index: node.index,
           });
+          localChildren.push({ ...(newFolder as BookmarkNode), children: [] });
           addedCount++;
 
           if (node.children && node.children.length > 0) {
-            await createChildren(newFolder.id, node.children);
+            await mergeNodes(newFolder.id, node.children);
           }
         } catch (error) {
           console.warn(
