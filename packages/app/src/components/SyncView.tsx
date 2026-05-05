@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 
 import { motion } from 'framer-motion'
-import { AlertTriangle, Cloud, Download, FilePlus, History, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
+import { AlertTriangle, Cloud, Download, FilePlus, History, MoreHorizontal, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
 import { clearLastBackupFileInfo, holdRestoringUntil, setIsRestoring } from '../application/state-manager'
 import { snapshotManager, type Snapshot } from '../core/backup'
 import { bookmarkRepository, countBookmarks } from '../core/bookmark'
@@ -41,8 +41,9 @@ export function SyncView() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'checking' | 'syncing' | 'success' | 'error'>('idle')
   const [msg, setMsg] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerMode, setDrawerMode] = useState<'conflict' | 'history' | 'cloudBackups'>('conflict')
+  const [drawerMode, setDrawerMode] = useState<'conflict' | 'history' | 'cloudBackups' | 'actions'>('conflict')
   const [confirmDrawerOpen, setConfirmDrawerOpen] = useState(false)
+  const [confirmPushOpen, setConfirmPushOpen] = useState(false)
   const [pendingRestoreSnapshot, setPendingRestoreSnapshot] = useState<Snapshot | null>(null)
   const [cloudBackups, setCloudBackups] = useState<CloudBackupFile[]>([])
   const [loadingCloudBackups, setLoadingCloudBackups] = useState(false)
@@ -239,6 +240,23 @@ export function SyncView() {
     setConfirmDrawerOpen(false)
   }
 
+  const openMoreActions = () => {
+    setDrawerMode('actions')
+    setDrawerOpen(true)
+  }
+
+  const requestForcePush = () => {
+    if (!isOnline || localCount === 0 || isSyncBusy) return
+    setDrawerOpen(false)
+    setConfirmPushOpen(true)
+  }
+
+  const confirmForcePush = async () => {
+    if (!isOnline || localCount === 0 || isSyncBusy) return
+    setConfirmPushOpen(false)
+    await executePush()
+  }
+
   // 打开云端备份列表
   const openCloudBackups = () => {
     setDrawerMode('cloudBackups')
@@ -409,6 +427,8 @@ export function SyncView() {
       }
   }
 
+  const isSyncBusy = syncStatus === 'checking' || syncStatus === 'syncing'
+
   return (
     <>
     <motion.div 
@@ -473,19 +493,19 @@ export function SyncView() {
                       </span>
                   </button>
 
-                  {/* 小的圆形恢复按钮 */}
+                  {/* 小的圆形更多操作按钮 */}
                   <button
-                      onClick={openCloudBackups}
-                      disabled={!isOnline}
+                      onClick={openMoreActions}
+                      disabled={!isOnline || isSyncBusy}
                       className={cn(
                           "absolute bottom-0 right-0 w-12 h-12 rounded-full glass-panel flex items-center justify-center transition-all shadow-lg",
-                          isOnline 
+                          isOnline && !isSyncBusy
                               ? "hover:scale-110 active:scale-95" 
                               : "opacity-50 cursor-not-allowed"
                       )}
-                      title="查看云端备份"
+                      title="更多同步选项"
                   >
-                      <Download className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
+                      <MoreHorizontal className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
                   </button>
                 </div>
 
@@ -527,9 +547,59 @@ export function SyncView() {
     <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={drawerMode === 'history' ? '本地快照' : drawerMode === 'cloudBackups' ? '云端备份' : '同步选项'}
+        title={drawerMode === 'history' ? '本地快照' : drawerMode === 'cloudBackups' ? '云端备份' : drawerMode === 'actions' ? '更多同步操作' : '同步选项'}
     >
-        {drawerMode === 'cloudBackups' ? (
+        {drawerMode === 'actions' ? (
+             <div className="space-y-2 pt-2">
+                 <button
+                      type="button"
+                      onClick={openCloudBackups}
+                      disabled={!isOnline || isSyncBusy}
+                      className={cn(
+                          "w-full rounded-xl bg-muted/70 border border-border p-4 text-left transition-colors",
+                          !isOnline || isSyncBusy
+                              ? "opacity-50 cursor-not-allowed"
+                              : "hover:border-primary/50 hover:bg-accent/70"
+                      )}
+                 >
+                     <div className="flex items-center gap-3">
+                         <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                             <Download className="w-4 h-4 text-primary" />
+                         </div>
+                         <div className="min-w-0 flex-1">
+                             <div className="text-sm font-medium text-foreground">查看云端备份</div>
+                             <div className="text-xs text-muted-foreground mt-0.5">查看历史云端备份并恢复到本地</div>
+                         </div>
+                     </div>
+                 </button>
+
+                 <div className="h-px bg-border/70 my-3" />
+
+                  <button
+                      type="button"
+                      onClick={requestForcePush}
+                      disabled={!isOnline || localCount === 0 || isSyncBusy}
+                      className={cn(
+                          "w-full rounded-xl border p-4 text-left transition-colors",
+                          !isOnline || localCount === 0 || isSyncBusy
+                              ? "bg-muted/40 border-border opacity-50 cursor-not-allowed"
+                              : "bg-destructive/5 border-destructive/20 hover:bg-destructive/10 hover:border-destructive/40"
+                      )}
+                  >
+                     <div className="flex items-center gap-3">
+                         <div className="w-9 h-9 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                             <AlertTriangle className="w-4 h-4 text-destructive" />
+                         </div>
+                         <div className="min-w-0 flex-1">
+                             <div className="text-sm font-medium text-destructive">以本地覆盖云端…</div>
+                             <div className="text-xs text-muted-foreground mt-0.5">
+                                 {localCount === 0 ? '本地书签为空，无法上传' : '使用当前本地书签覆盖云端最新备份'}
+                             </div>
+                         </div>
+                     </div>
+                 </button>
+             </div>
+        ) : drawerMode === 'cloudBackups' ? (
              <div className="space-y-3 pt-2">
                 <p className="text-xs text-muted-foreground mb-2">选择一个云端备份恢复到本地（会自动创建本地快照）：</p>
                 {loadingCloudBackups ? (
@@ -634,18 +704,18 @@ export function SyncView() {
                 <div className="grid grid-cols-2 gap-3">
                     <Button 
                         variant="outline" 
-                        className="h-20 flex flex-col gap-1 hover:bg-accent hover:text-accent-foreground"
+                        className={cn("h-20 flex flex-col gap-1 hover:bg-accent hover:text-accent-foreground", (!isOnline || isSyncBusy) && "opacity-50")}
                         onClick={() => executePull('overwrite')}
-                        disabled={!isOnline}
+                        disabled={!isOnline || isSyncBusy}
                     >
                         <ShieldCheck className="w-5 h-5 text-emerald-500" />
                         <span className="text-foreground text-sm">恢复到本地</span>
                         <span className="text-[10px] text-muted-foreground">将创建本地自动快照</span>
                     </Button>
                     <Button 
-                        className={cn("h-20 flex flex-col gap-1", (localCount === 0 || !isOnline) && "opacity-50")}
-                        onClick={executePush}
-                        disabled={localCount === 0 || !isOnline}
+                        className={cn("h-20 flex flex-col gap-1", (localCount === 0 || !isOnline || isSyncBusy) && "opacity-50")}
+                        onClick={requestForcePush}
+                        disabled={localCount === 0 || !isOnline || isSyncBusy}
                     >
                         {localCount === 0 ? (
                             <>
@@ -677,6 +747,42 @@ export function SyncView() {
                 </div>
             </div>
         ) : null}
+    </Drawer>
+
+    {/* 覆盖云端二次确认 Drawer */}
+    <Drawer
+        isOpen={confirmPushOpen}
+        onClose={() => setConfirmPushOpen(false)}
+        title="确认覆盖云端数据？"
+    >
+        <div className="space-y-4 pt-2">
+            <div className="bg-destructive/10 border border-destructive/20 p-4 rounded-xl flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-destructive shrink-0" />
+                <div>
+                    <h4 className="text-sm font-bold text-foreground mb-1">此操作会覆盖云端最新备份</h4>
+                    <p className="text-xs text-foreground/80 leading-relaxed">
+                        将使用当前本地书签覆盖云端最新备份。<br/>
+                        如果其他设备上有未同步的新书签，它们可能会被覆盖。
+                    </p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+                <Button
+                    variant="outline"
+                    onClick={() => setConfirmPushOpen(false)}
+                >
+                    取消
+                </Button>
+                <Button
+                    variant="destructive"
+                    onClick={confirmForcePush}
+                    disabled={isSyncBusy || !isOnline || localCount === 0}
+                >
+                    确认覆盖云端
+                </Button>
+            </div>
+        </div>
     </Drawer>
 
     {/* 独立的确认恢复 Drawer */}

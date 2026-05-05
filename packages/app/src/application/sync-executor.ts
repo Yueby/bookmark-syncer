@@ -6,6 +6,7 @@ import browser from "webextension-polyfill";
 import { getCloudInfo, smartPull, smartPush, type SyncState } from "../core/sync";
 import {
     LOCK_HOLDER_AUTO,
+    POST_PULL_UPLOAD_SUPPRESSION_MS,
     SYNC_STATE_KEY,
 } from "./constants";
 import { getIsRestoring, getWebDAVConfig, setIsRestoring } from "./state-manager";
@@ -45,6 +46,17 @@ export async function executeUpload(): Promise<void> {
     const storageResult = await browser.storage.local.get(SYNC_STATE_KEY);
     const syncState = storageResult[SYNC_STATE_KEY] as SyncState | undefined;
     const lastSyncTime = syncState?.url === config.url ? syncState.time : 0;
+
+    if (
+      syncState?.url === config.url &&
+      (syncState.type === "download" || syncState.type === "restore") &&
+      Date.now() - syncState.time < POST_PULL_UPLOAD_SUPPRESSION_MS
+    ) {
+      console.log(
+        "[SyncExecutor] Skipped upload: recently pulled/restored, waiting for native bookmark sync to settle",
+      );
+      return;
+    }
 
     const cloudInfo = await getCloudInfo(config);
     const cloudTime = cloudInfo.exists ? (cloudInfo.timestamp || 0) : 0;

@@ -23,5 +23,8 @@ export const RESTORING_TIMEOUT_MS = 10000;
 /** 防抖延迟时间（1秒） */
 export const DEBOUNCE_DELAY_MS = 1000;
 
-/** 重置恢复状态延迟（3秒） */
-export const RESET_RESTORING_DELAY_MS = 3000;
+/** 重置恢复状态延迟（30秒，给浏览器原生书签同步留出收敛时间） */
+export const RESET_RESTORING_DELAY_MS = 30000;
+
+/** 下载/恢复后自动上传抑制窗口（2分钟，避免把原生同步的短暂重复状态写回云端） */
+export const POST_PULL_UPLOAD_SUPPRESSION_MS = 120000;

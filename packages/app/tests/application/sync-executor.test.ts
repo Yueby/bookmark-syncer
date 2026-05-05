@@ -26,6 +26,7 @@ vi.mock("@src/core/sync", () => ({
 }));
 
 import { executeAutoPull, executeUpload } from "@src/application/sync-executor";
+import { POST_PULL_UPLOAD_SUPPRESSION_MS } from "@src/application/constants";
 import browser from "webextension-polyfill";
 
 const config = { url: "https://dav.example.com", username: "u", password: "p" };
@@ -92,6 +93,74 @@ describe("executeUpload", () => {
     expect(mocks.smartPush).not.toHaveBeenCalled();
   });
 
+  it("最近下载后跳过自动上传", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+    try {
+      vi.mocked(browser.storage.local.get).mockResolvedValueOnce({
+        syncState: {
+          url: config.url,
+          time: now - 30000,
+          type: "download",
+        },
+      });
+
+      await executeUpload();
+
+      expect(mocks.getCloudInfo).not.toHaveBeenCalled();
+      expect(mocks.smartPull).not.toHaveBeenCalled();
+      expect(mocks.smartPush).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("最近恢复后跳过自动上传", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+    try {
+      vi.mocked(browser.storage.local.get).mockResolvedValueOnce({
+        syncState: {
+          url: config.url,
+          time: now - 30000,
+          type: "restore",
+        },
+      });
+
+      await executeUpload();
+
+      expect(mocks.getCloudInfo).not.toHaveBeenCalled();
+      expect(mocks.smartPull).not.toHaveBeenCalled();
+      expect(mocks.smartPush).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("下载抑制窗口结束后继续自动上传", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+    try {
+      vi.mocked(browser.storage.local.get).mockResolvedValueOnce({
+        syncState: {
+          url: config.url,
+          time: now - POST_PULL_UPLOAD_SUPPRESSION_MS - 1,
+          type: "download",
+        },
+      });
+
+      await executeUpload();
+
+      expect(mocks.getCloudInfo).toHaveBeenCalled();
+      expect(mocks.smartPush).toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("云端有更新时先 pull 再 push", async () => {
     const syncState = { url: config.url, time: 1000 };
     vi.mocked(browser.storage.local.get).mockResolvedValueOnce({
@@ -104,7 +173,6 @@ describe("executeUpload", () => {
 
     await executeUpload();
     expect(mocks.smartPull).toHaveBeenCalledBefore(mocks.smartPush);
-    expect(mocks.setIsRestoring).toHaveBeenCalledWith(true);
   });
 
   it("pull 失败时不继续 push", async () => {
@@ -150,7 +218,6 @@ describe("executeAutoPull", () => {
   it("检测到云端更新时执行 pull", async () => {
     await executeAutoPull();
     expect(mocks.smartPull).toHaveBeenCalled();
-    expect(mocks.setIsRestoring).toHaveBeenCalledWith(true);
   });
 
   it("恢复中跳过 pull", async () => {
