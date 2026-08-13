@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="./packages/app/assets/icon.png" alt="Logo" width="80" height="80">
 </p>
@@ -88,8 +90,8 @@
 pnpm install
 
 # 开发模式（热重载）
-pnpm dev:chrome   # Chrome 扩展开发
-pnpm dev:firefox  # Firefox 扩展开发
+pnpm -C apps/chrome-extension dev   # Chrome 扩展开发
+pnpm -C apps/firefox-extension dev  # Firefox 扩展开发
 
 # 构建生产版本
 pnpm build
