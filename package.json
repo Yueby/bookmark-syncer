@@ -7,6 +7,8 @@
     "build": "pnpm build:chrome && pnpm build:firefox",
     "build:chrome": "pnpm --filter @bookmark-syncer/chrome-extension build",
     "build:firefox": "pnpm --filter @bookmark-syncer/firefox-extension build",
+    "dev:chrome": "pnpm --filter @bookmark-syncer/chrome-extension dev",
+    "dev:firefox": "pnpm --filter @bookmark-syncer/firefox-extension dev",
     "package": "pnpm package:chrome && pnpm sign:firefox",
     "package:chrome": "pnpm build:chrome && cd apps/chrome-extension/dist && npx bestzip ../chrome-extension.zip * && cd ../../..",
     "sign:firefox": "pnpm build:firefox && dotenv -- web-ext sign --channel=unlisted --source-dir=apps/firefox-extension/dist --artifacts-dir=apps/firefox-extension"
