@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "Bookmark Syncer"
+  },
+  "extDescription": {
+    "message": "A modern cross-device bookmark sync tool based on WebDAV"
+  }
+}

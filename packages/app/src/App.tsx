@@ -6,11 +6,13 @@ import { SettingsView } from './components/SettingsView'
 import { SyncView } from './components/SyncView'
 import { TabNav } from './components/TabNav'
 import { Toaster } from './components/Toaster'
+import { I18nProvider } from './i18n'
 
 function App() {
   const [activeTab, setActiveTab] = useState<'sync' | 'settings'>('sync')
 
   return (
+    <I18nProvider>
     <ErrorBoundary>
     <LayoutWrapper>
       {/* Top Nav */}
@@ -38,6 +40,7 @@ function App() {
       <Toaster position="bottom-center" duration={2000} />
     </LayoutWrapper>
     </ErrorBoundary>
+    </I18nProvider>
   )
 }
 

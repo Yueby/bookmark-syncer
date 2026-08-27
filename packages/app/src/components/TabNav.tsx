@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { Cloud, Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { useTheme } from '../hooks/useTheme'
+import { useI18n } from '../i18n'
 import { cn } from '../infrastructure/utils/format'
 
 interface TabNavProps {
@@ -10,6 +11,7 @@ interface TabNavProps {
 
 export function TabNav({ activeTab, onTabChange }: TabNavProps) {
   const { theme, setTheme } = useTheme()
+  const { t } = useI18n()
 
   // 循环切换主题
   const cycleTheme = () => {
@@ -40,7 +42,7 @@ export function TabNav({ activeTab, onTabChange }: TabNavProps) {
             />
           )}
           <Cloud className="w-4 h-4" />
-          同步
+          {t('tab.sync')}
         </button>
         
         <button
@@ -58,7 +60,7 @@ export function TabNav({ activeTab, onTabChange }: TabNavProps) {
             />
           )}
           <Settings className="w-4 h-4" />
-          设置
+          {t('tab.settings')}
         </button>
       </div>
 
@@ -69,7 +71,7 @@ export function TabNav({ activeTab, onTabChange }: TabNavProps) {
           "p-2 rounded-full transition-all border shadow-sm",
           "bg-muted border-border text-muted-foreground hover:text-foreground hover:border-primary/50"
         )}
-        title={`当前: ${theme === 'dark' ? '暗色' : theme === 'light' ? '亮色' : '跟随系统'}`}
+        title={t('theme.current', { theme: theme === 'dark' ? t('theme.dark') : theme === 'light' ? t('theme.light') : t('theme.system') })}
       >
         <ThemeIcon className="w-4 h-4" />
       </button>

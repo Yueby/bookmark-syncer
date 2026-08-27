@@ -104,6 +104,9 @@ const browser = {
       hasListeners: vi.fn(() => false),
     },
   },
+  i18n: {
+    getUILanguage: vi.fn(() => "en-US"),
+  },
 };
 
 /**

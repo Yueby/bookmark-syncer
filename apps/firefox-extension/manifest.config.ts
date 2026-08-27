@@ -5,9 +5,11 @@ import { version } from "../../package.json";
 
 const manifest = defineManifest({
   manifest_version: 3,
-  name: "书签同步助手",
+  // 名称/描述通过 _locales 本地化（packages/app/assets/_locales/）
+  default_locale: "zh_CN",
+  name: "__MSG_extName__",
   version: version,
-  description: "基于 WebDAV 的现代化跨设备书签同步工具",
+  description: "__MSG_extDescription__",
   action: {
     default_popup: "index.html",
     default_icon: {
