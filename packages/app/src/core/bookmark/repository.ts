@@ -100,6 +100,8 @@ export class BookmarkRepository {
     const shared: SharedSyncState = {
       processedLocalIds: new Set<string>(),
       visitedFolderIds: new Set<string>(),
+      folderBookmarkKeys: new Map<string, Set<string>>(),
+      folderUsedUrls: new Map<string, Set<string>>(),
     };
 
     for (const backupChild of root.children) {
