@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Clock, Info, Link2, Loader2, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { updateScheduledSync } from '../application'
 import { smartPush } from '../core/sync'
@@ -60,13 +60,18 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useStorage('webdav_password', '')
   const [testing, setTesting] = useState(false)
 
+  // 记录上次已保存（挂载时）的配置，用于检测真正的变更
+  // 注意：不能直接比较当前 state——用户输入过程中 state 已变化，
+  // trim 后再比较当前值是恒等的（死代码）
+  const savedUrlRef = useRef(webdavUrl)
+  const savedUsernameRef = useRef(username)
+
   const testConnection = async () => {
     setTesting(true)
     try {
-      // 保存时自动 trim 去除首尾空格
+      // 保存时自动 trim 去除首尾空格（密码保留原样，避免破坏含首尾空格的真实密码）
       const trimmedUrl = webdavUrl.trim();
       const trimmedUsername = username.trim();
-      const trimmedPassword = password.trim();
 
       // URL 基本格式校验
       if (trimmedUrl && !/^https?:\/\/.+/i.test(trimmedUrl)) {
@@ -74,32 +79,33 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
         return;
       }
       
-      // 检查配置是否变更（用于决定是否需要自动备份）
-      const previousUrl = webdavUrl.trim();
-      const previousUsername = username.trim();
+      // 与上次保存的配置比较（检测换服务器/换账号的场景）
       const configChanged = 
-        (previousUrl && previousUrl !== trimmedUrl) || 
-        (previousUsername && previousUsername !== trimmedUsername);
+        (savedUrlRef.current && savedUrlRef.current !== trimmedUrl) || 
+        (savedUsernameRef.current && savedUsernameRef.current !== trimmedUsername);
       
       // 测试连接
       const client = getWebDAVClient({ 
         url: trimmedUrl, 
         username: trimmedUsername, 
-        password: trimmedPassword 
+        password: password 
       })
       await client.testConnection()
       
       // 更新存储的值
       if (trimmedUrl !== webdavUrl) setWebdavUrl(trimmedUrl);
       if (trimmedUsername !== username) setUsername(trimmedUsername);
-      if (trimmedPassword !== password) setPassword(trimmedPassword);
+      
+      // 记录本次保存的配置，供下次变更检测
+      savedUrlRef.current = trimmedUrl;
+      savedUsernameRef.current = trimmedUsername;
       
       // 配置变更且连接成功 → 自动备份
-      if (configChanged && previousUrl) { // 确保之前有配置（不是首次设置）
+      if (configChanged && savedUrlRef.current) { // 确保之前有配置（不是首次设置）
         toast.info('检测到配置变更，正在创建备份...', { duration: 2000 });
         try {
           const result = await smartPush(
-            { url: trimmedUrl, username: trimmedUsername, password: trimmedPassword }, 
+            { url: trimmedUrl, username: trimmedUsername, password: password }, 
             'manual'
           );
           

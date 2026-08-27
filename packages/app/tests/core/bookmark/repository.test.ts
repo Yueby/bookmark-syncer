@@ -32,6 +32,7 @@ vi.mock("@src/core/bookmark/merger", () => ({
   smartSync: vi.fn(async () => {}),
   mergeNodes: vi.fn(async () => {}),
   createChildren: vi.fn(async () => {}),
+  deleteUnprocessedNodes: vi.fn(async () => 0),
 }));
 
 vi.mock("@src/core/bookmark/normalizer", () => ({
@@ -46,6 +47,7 @@ vi.mock("@src/core/bookmark/normalizer", () => ({
     return !!node.folderType;
   }),
   normalizeUrl: vi.fn((url: string) => url),
+  annotateSystemFolders: vi.fn((tree: BookmarkNode[]) => tree),
 }));
 
 vi.mock("@src/core/bookmark/comparator", () => ({

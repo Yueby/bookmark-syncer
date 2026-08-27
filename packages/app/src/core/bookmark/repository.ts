@@ -6,8 +6,8 @@ import { BrowserBookmarksAPI } from "../../infrastructure/browser/api";
 import type { BookmarkMetadata, BookmarkNode, CloudBackup } from "../../types";
 import { countBookmarks } from "./comparator";
 import { assignHashes } from "./hash-calculator";
-import { buildGlobalIndex, createChildren, mergeNodes, smartSync } from "./merger";
-import { findMatchingSystemFolder, hasCrossBrowserMapping } from "./normalizer";
+import { buildGlobalIndex, createChildren, deleteUnprocessedNodes, mergeNodes, smartSync, type SharedSyncState } from "./merger";
+import { findMatchingSystemFolder, hasCrossBrowserMapping, annotateSystemFolders } from "./normalizer";
 
 /**
  * 书签仓储类
@@ -18,7 +18,9 @@ export class BookmarkRepository {
    * 获取完整书签树
    */
   async getTree(): Promise<BookmarkNode[]> {
-    return (await BrowserBookmarksAPI.getTree()) as BookmarkNode[];
+    const tree = (await BrowserBookmarksAPI.getTree()) as BookmarkNode[];
+    // 为 Chromium 系统根标注 folderType（真实 Chrome API 不提供该字段）
+    return annotateSystemFolders(tree);
   }
 
   /**
@@ -66,6 +68,9 @@ export class BookmarkRepository {
       throw new Error("备份数据格式无效：缺少根节点或子节点");
     }
 
+    // 兼容旧版云端数据：顶层系统文件夹可能无 folderType/id，按位置推断
+    annotateSystemFolders(tree);
+
     const backupCount = countBookmarks(tree);
     console.log(`[BookmarkRepository] Backup contains ${backupCount} bookmarks`);
 
@@ -89,6 +94,14 @@ export class BookmarkRepository {
       `[BookmarkRepository] Syncing ${root.children.length} system folders...`,
     );
 
+    // 跨顶层文件夹共享的同步状态：
+    // - processedLocalIds 共享 → 跨文件夹移动/重复书签不会互抢同一物理节点
+    // - 删除阶段延后到所有文件夹处理完后统一执行（防止“先删后配”丢数据）
+    const shared: SharedSyncState = {
+      processedLocalIds: new Set<string>(),
+      visitedFolderIds: new Set<string>(),
+    };
+
     for (const backupChild of root.children) {
       // 检查是否有跨浏览器映射
       if (!hasCrossBrowserMapping(backupChild)) {
@@ -99,14 +112,17 @@ export class BookmarkRepository {
       const targetFolder = findMatchingSystemFolder(backupChild, localChildren);
 
       if (targetFolder && targetFolder.id && backupChild.children) {
+        // folderType 优先：与 buildGlobalIndex 的路径前缀一致，
+        // 避免 bar/Work 与 other/Work 同路径冲突
         const folderName =
-          targetFolder.title || targetFolder.folderType || "system";
+          targetFolder.folderType || targetFolder.title || "system";
         console.log(`[BookmarkRepository] Syncing folder: ${folderName}`);
         await smartSync(
           targetFolder.id,
           backupChild.children,
           localIndex,
           folderName,
+          shared,
         );
       } else {
         // 有映射但找不到匹配的本地文件夹
@@ -115,6 +131,9 @@ export class BookmarkRepository {
         );
       }
     }
+
+    // 统一删除阶段：清理所有参与同步文件夹中未被云端覆盖的本地节点
+    await deleteUnprocessedNodes(shared);
 
     const elapsed = Date.now() - startTime;
     console.log(`[BookmarkRepository] Restore completed in ${elapsed}ms`);
@@ -171,6 +190,9 @@ export class BookmarkRepository {
     if (!root || !root.children) {
       throw new Error("Invalid bookmark backup format");
     }
+
+    // 兼容旧版云端数据：顶层系统文件夹可能无 folderType/id，按位置推断
+    annotateSystemFolders(tree);
 
     // 获取本地书签树
     const localTree = await this.getTree();

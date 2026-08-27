@@ -101,8 +101,8 @@ describe("buildGlobalIndex", () => {
     ];
     const index = await buildGlobalIndex(tree);
 
-    expect(index.pathToFolder.has("Dev")).toBe(true);
-    expect(index.pathToFolder.get("Dev")!.id).toBe("20");
+    expect(index.pathToFolder.has("bookmarks-bar/Dev")).toBe(true);
+    expect(index.pathToFolder.get("bookmarks-bar/Dev")!.id).toBe("20");
   });
 
   it("空树返回空索引", async () => {

@@ -5,7 +5,7 @@
 import { BrowserBookmarksAPI } from "../../infrastructure/browser/api";
 import { generateHash } from "../../infrastructure/utils/crypto";
 import type { BookmarkNode } from "../../types";
-import { isSystemRootFolder, normalizeUrl } from "./normalizer";
+import { hasCrossBrowserMapping, isSystemRootFolder, normalizeUrl } from "./normalizer";
 import type {
     BookmarkLocation,
     FolderLocation,
@@ -64,8 +64,19 @@ export async function buildGlobalIndex(tree: BookmarkNode[]): Promise<GlobalInde
       }
 
       // 递归收集子节点
+      // 系统根的一级子节点用 folderType（或标题）作路径前缀：
+      // 避免 bar/Work 与 other/Work 同 key 互相覆盖
+      const childPrefix = isSystemRootFolder(node)
+        ? (node.folderType || node.title || "")
+        : currentPath;
+
       for (const child of node.children) {
-        collect(child, isSystemRootFolder(node) ? "" : currentPath);
+        // 跳过无跨浏览器映射的系统根子树（如 Firefox 的 menu________）：
+        // 这些子树设计上不同步，若编入索引会被全局匹配搬空
+        if (isSystemRootFolder(node) && isSystemRootFolder(child) && !hasCrossBrowserMapping(child)) {
+          continue;
+        }
+        collect(child, isSystemRootFolder(node) ? childPrefix : currentPath);
       }
     }
   }
@@ -243,11 +254,72 @@ export async function createChildren(
  * @param localIndex 本地全局索引
  * @param localParentPath 本地父路径
  */
+/**
+ * 跨多次 smartSync 调用共享的同步状态
+ * 解决“先删后配”竞态：删除阶段必须等所有顶层文件夹处理完后统一执行，
+ * 否则云端跨系统文件夹移动书签时（bar→other），先处理的文件夹会删掉本地节点，
+ * 后续文件夹找不到节点而丢数据；共享 processed 集合也让跨文件夹的重复书签
+ * 命中“已处理”时降级为创建副本，而非互抢同一物理节点。
+ */
+export interface SharedSyncState {
+  /** 已处理过的本地节点 ID（含新建） */
+  processedLocalIds: Set<string>;
+  /** 参与同步的本地文件夹 ID（删除阶段对这些文件夹执行） */
+  visitedFolderIds: Set<string>;
+}
+
+/**
+ * 删除阶段：清理所有参与同步文件夹中未被云端覆盖的本地节点
+ * 必须在所有 smartSync 处理完后统一调用（见 SharedSyncState 注释）
+ */
+export async function deleteUnprocessedNodes(
+  shared: SharedSyncState,
+): Promise<number> {
+  let deleted = 0;
+  for (const folderId of shared.visitedFolderIds) {
+    try {
+      const children = (await BrowserBookmarksAPI.getChildren(folderId)) as BookmarkNode[];
+      for (const child of children) {
+        if (!child.id || shared.processedLocalIds.has(child.id)) continue;
+
+        try {
+          const removeMethod = child.url
+            ? BrowserBookmarksAPI.remove(child.id)
+            : BrowserBookmarksAPI.removeTree(child.id);
+
+          await removeMethod;
+          deleted++;
+        } catch (error) {
+          const errorMsg = (error as Error).message || '';
+          const nodeType = child.url ? "bookmark" : "folder";
+          // 节点已被删除是正常情况（可能被其他操作处理过）
+          if (errorMsg.includes("Can't find bookmark")) {
+            console.log(
+              `[Merger] ${nodeType} ${child.id} already deleted, skipping`,
+            );
+          } else {
+            console.warn(
+              `[Merger] Failed to delete ${nodeType} ${child.id}:`,
+              error,
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`[Merger] Failed to get children of folder ${folderId}:`, error);
+    }
+  }
+
+  console.log(`[Merger] Delete phase completed: ${deleted} nodes removed`);
+  return deleted;
+}
+
 export async function smartSync(
   localParentId: string,
   cloudNodes: BookmarkNode[],
   localIndex: GlobalIndex,
   localParentPath: string,
+  sharedState?: SharedSyncState,
 ): Promise<void> {
   console.log(
     `[Merger] Syncing folder "${localParentPath}" (${cloudNodes.length} cloud nodes)`,
@@ -261,7 +333,18 @@ export async function smartSync(
   console.log(`[Merger] Local folder has ${localChildren.length} children`);
 
   // 已处理的本地 ID（防止重复处理）
-  const processedLocalIds = new Set<string>();
+  // 若上层传入共享状态（restoreFromBackup 级），则跨顶层文件夹共享，
+  // 否则退化为单次调用独立（兼容旧用法，删除阶段在本调用内执行）
+  const shared = sharedState ?? {
+    processedLocalIds: new Set<string>(),
+    visitedFolderIds: new Set<string>(),
+  };
+  const processedLocalIds = shared.processedLocalIds;
+  const standalone = !sharedState;
+
+  // 记录参与同步的文件夹（供删除阶段使用）
+  shared.visitedFolderIds.add(localParentId);
+
   // 同一文件夹内已处理的云端书签身份（防止不可区分的重复项继续创建）
   const processedBookmarkKeys = new Set<string>();
   // 同一文件夹内已确定目标的文件夹（允许后续同名文件夹复用同一目标）
@@ -435,6 +518,7 @@ export async function smartSync(
           cloudNode.children,
           localIndex,
           cloudFolderPath,
+          sharedState,
         );
         continue;
       }
@@ -515,6 +599,7 @@ export async function smartSync(
           cloudNode.children,
           localIndex,
           cloudFolderPath,
+          sharedState,
         );
       } else {
         // 创建新文件夹
@@ -537,6 +622,7 @@ export async function smartSync(
               cloudNode.children,
               localIndex,
               cloudFolderPath,
+              sharedState,
             );
           }
         } catch (error) {
@@ -550,37 +636,41 @@ export async function smartSync(
   }
 
   // Phase 3: 删除本地多余的节点
-  // 重新获取当前子节点（因为可能有移动/创建）
-  const finalLocalChildren = (await BrowserBookmarksAPI.getChildren(
-    localParentId,
-  )) as BookmarkNode[];
+  // 共享模式下删除阶段由上层（restoreFromBackup）统一延后执行，
+  // 避免云端跨文件夹移动时“先删后配”丢数据；
+  // 仅独立调用（无 sharedState）时在本调用内立即删除以保持旧行为
+  if (standalone) {
+    const finalLocalChildren = (await BrowserBookmarksAPI.getChildren(
+      localParentId,
+    )) as BookmarkNode[];
 
-  for (const localNode of finalLocalChildren) {
-    if (!localNode.id || processedLocalIds.has(localNode.id)) continue;
+    for (const localNode of finalLocalChildren) {
+      if (!localNode.id || processedLocalIds.has(localNode.id)) continue;
 
-    // 这个节点在云端不存在，删除它
-    try {
-      const removeMethod = localNode.url
-        ? BrowserBookmarksAPI.remove(localNode.id)
-        : BrowserBookmarksAPI.removeTree(localNode.id);
+      // 这个节点在云端不存在，删除它
+      try {
+        const removeMethod = localNode.url
+          ? BrowserBookmarksAPI.remove(localNode.id)
+          : BrowserBookmarksAPI.removeTree(localNode.id);
 
-      await removeMethod;
-      stats.itemsDeleted++;
-    } catch (error) {
-      const errorMsg = (error as Error).message || '';
-      const nodeType = localNode.url ? "bookmark" : "folder";
-      
-      // 节点已被删除是正常情况（可能被其他操作处理过）
-      if (errorMsg.includes("Can't find bookmark")) {
-        console.log(
-          `[Merger] ${nodeType} ${localNode.id} already deleted, skipping`,
-        );
-      } else {
-        // 其他错误才需要警告
-        console.warn(
-          `[Merger] Failed to delete ${nodeType} ${localNode.id}:`,
-          error,
-        );
+        await removeMethod;
+        stats.itemsDeleted++;
+      } catch (error) {
+        const errorMsg = (error as Error).message || '';
+        const nodeType = localNode.url ? "bookmark" : "folder";
+
+        // 节点已被删除是正常情况（可能被其他操作处理过）
+        if (errorMsg.includes("Can't find bookmark")) {
+          console.log(
+            `[Merger] ${nodeType} ${localNode.id} already deleted, skipping`,
+          );
+        } else {
+          // 其他错误才需要警告
+          console.warn(
+            `[Merger] Failed to delete ${nodeType} ${localNode.id}:`,
+            error,
+          );
+        }
       }
     }
   }

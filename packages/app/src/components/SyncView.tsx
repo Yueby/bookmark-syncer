@@ -4,6 +4,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { motion } from 'framer-motion'
 import { AlertTriangle, Cloud, Download, FilePlus, History, MoreHorizontal, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
 import { clearLastBackupFileInfo, holdRestoringUntil, setIsRestoring } from '../application/state-manager'
+import { resetScheduledSync } from '../application'
 import { snapshotManager, type Snapshot } from '../core/backup'
 import { bookmarkRepository, countBookmarks } from '../core/bookmark'
 import { getCloudBackupList, getCloudInfo, restoreFromCloudBackup, smartPull, smartPush, smartSync, type CloudBackupFile } from '../core/sync'
@@ -161,9 +162,9 @@ export function SyncView() {
     setConfirmDrawerOpen(false)
     setDrawerOpen(false)
     
-    // 提示用户操作会在后台继续
+    // 提示用户操作需要保持面板开启（同步运行在 popup 上下文中，关闭面板会中断）
     const loadingToast = toast.loading('正在从云端恢复书签...', { 
-      description: '即使关闭面板，操作也会在后台完成' 
+      description: '请保持面板开启，关闭面板会中断操作' 
     })
     
     try {
@@ -266,12 +267,12 @@ export function SyncView() {
 
   // --- 智能无感同步逻辑 ---
   
-  // 获取 syncService 需要的配置（去除首尾空格）
+  // 获取 syncService 需要的配置（URL/用户名去首尾空格；密码保留原样，避免破坏含首尾空格的真实密码）
   const getSyncConfig = () => {
     const config = { 
       url: webdavUrl.trim(), 
       username: username.trim(), 
-      password: password.trim() 
+      password: password
     };
     console.log('[SyncView] Getting sync config:', { url: config.url, hasPassword: !!config.password });
     return config;
@@ -312,7 +313,6 @@ export function SyncView() {
               loadCounts()
               
               // 重置定时同步计时器，避免手动同步后立即触发定时同步
-              const { resetScheduledSync } = await import('../background/autoSync')
               await resetScheduledSync()
               
               scheduleMsgClear()
@@ -345,8 +345,8 @@ export function SyncView() {
               loadSnapshots() // 刷新快照列表
               
               // 重置定时同步计时器
-              const { resetScheduledSync } = await import('../background/autoSync')
               await resetScheduledSync()
+              scheduleMsgClear()
           } else {
               if (result.message === '同步正在进行中') {
                   toast.info('同步正在进行中，请稍后重试')
@@ -359,8 +359,6 @@ export function SyncView() {
       } catch (e) {
           setSyncStatus('error')
           setMsg('上传失败')
-      } finally {
-          if(syncStatus !== 'error') scheduleMsgClear()
       }
   }
 
@@ -382,10 +380,10 @@ export function SyncView() {
       setSyncStatus('syncing') 
       setMsg(mode === 'overwrite' ? '正在恢复...' : '正在合并...')
       
-      // 提示用户操作会在后台继续
+      // 提示用户操作需要保持面板开启（同步运行在 popup 上下文中，关闭面板会中断）
       const loadingToast = toast.loading(
         mode === 'overwrite' ? '正在恢复书签...' : '正在合并书签...', 
-        { description: '即使关闭面板，操作也会在后台完成' }
+        { description: '请保持面板开启，关闭面板会中断操作' }
       )
       
       try {
@@ -401,9 +399,9 @@ export function SyncView() {
               loadSnapshots() // 刷新快照列表
               
               // 重置定时同步计时器
-              const { resetScheduledSync } = await import('../background/autoSync')
               await resetScheduledSync()
               
+              scheduleMsgClear()
               toast.success('恢复成功', { 
                 description: `已恢复${mode === 'merge' ? '并合并' : ''}书签` 
               })
@@ -422,8 +420,6 @@ export function SyncView() {
           setSyncStatus('error')
           setMsg('恢复失败')
           toast.error('恢复失败', { description: (e as Error).message })
-      } finally {
-          if(syncStatus !== 'error') scheduleMsgClear()
       }
   }
 

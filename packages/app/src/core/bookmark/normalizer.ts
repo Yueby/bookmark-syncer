@@ -10,6 +10,60 @@ import {
 } from "./types";
 
 /**
+ * Chromium 系系统根 ID → folderType
+ * Chrome/Edge 的书签根节点 id 为 "0"，一级子文件夹固定为：
+ * "1"=书签栏, "2"=其他书签, "3"=移动书签
+ */
+export const CHROMIUM_ROOT_ID_TO_FOLDER_TYPE: Record<string, string> = {
+  "1": "bookmarks-bar",
+  "2": "other",
+  "3": "mobile",
+};
+
+/**
+ * 为书签树的系统根文件夹标注 folderType
+ *
+ * 背景：真实 Chrome/Edge 的 bookmarks.getTree() 返回的节点没有 folderType 字段，
+ * 只有稳定 id（0/1/2/3）；而跨浏览器匹配逻辑依赖 folderType。
+ * 在树的入口统一标注，让 isSystemRootFolder/hasCrossBrowserMapping/findMatchingSystemFolder
+ * 在 Chromium 上正常工作。
+ *
+ * 同时兼容旧版云端数据：旧版 Chrome 上传的备份顶层节点无 id、无 folderType
+ * （当时 assignHashToNode 未识别系统根），按位置推断（Chrome 顺序 bar/other/mobile）。
+ *
+ * @param tree 书签树（就地修改）
+ */
+export function annotateSystemFolders(tree: BookmarkNode[]): BookmarkNode[] {
+  const root = tree[0];
+  if (!root || !root.children) return tree;
+
+  root.children.forEach((child, idx) => {
+    if (child.url) return; // 书签不是文件夹
+    if (child.folderType) return; // 已有标注（新版上传的数据）
+
+    // Firefox 系统根 ID
+    if (child.id && FIREFOX_ID_TO_FOLDER_TYPE[child.id]) {
+      child.folderType = FIREFOX_ID_TO_FOLDER_TYPE[child.id];
+      return;
+    }
+
+    // Chromium 系统根 ID（"1"/"2"/"3"）
+    if (child.id && CHROMIUM_ROOT_ID_TO_FOLDER_TYPE[child.id]) {
+      child.folderType = CHROMIUM_ROOT_ID_TO_FOLDER_TYPE[child.id];
+      return;
+    }
+
+    // 旧版云端数据：顶层文件夹无 id（assignHashToNode 未保留），
+    // 按位置推断（Chrome 顶层顺序固定为 bar/other/mobile）
+    if (!child.id) {
+      child.folderType = idx === 0 ? "bookmarks-bar" : idx === 1 ? "other" : "mobile";
+    }
+  });
+
+  return tree;
+}
+
+/**
  * 判断节点是否为系统根文件夹（不应参与内容比对）
  */
 export function isSystemRootFolder(node: BookmarkNode): boolean {

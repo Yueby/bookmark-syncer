@@ -165,7 +165,8 @@ export async function getWebDAVConfig(): Promise<{
     config: {
       url: url.trim(),
       username: ((result.webdav_username as string) || "").trim(),
-      password: ((result.webdav_password as string) || "").trim(),
+      // 密码保留原样：trim 会破坏含首尾空格的真实密码
+      password: (result.webdav_password as string) || "",
     },
     autoSyncEnabled: result.auto_sync_enabled !== false,
     scheduledSyncEnabled: result.scheduled_sync_enabled === true,

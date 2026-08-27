@@ -195,7 +195,8 @@ describe("Application StateManager", () => {
       expect(result.config).toEqual({
         url: "https://dav.example.com",
         username: "user",
-        password: "pass",
+        // 密码保留原样：trim 会破坏含首尾空格的真实密码
+        password: "  pass  ",
       });
       expect(result.autoSyncEnabled).toBe(false);
       expect(result.scheduledSyncEnabled).toBe(true);

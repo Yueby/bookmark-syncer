@@ -20,7 +20,9 @@ export function getBrowserInfo(): BrowserInfo {
   let name = "Unknown";
   let version = "";
 
-  // 检测顺序很重要：Edge 和 Chrome 的 UA 都包含 "Chrome"
+  // 检测顺序很重要：
+  // - Edge 和 Opera 的 UA 都包含 "Chrome"，必须先于 Chrome 判断
+  // - Opera 的 UA 同时包含 "Chrome"，也必须先于 Chrome 判断（否则 Opera 分支不可达）
   if (ua.includes("Edg/")) {
     name = "Edge";
     const match = ua.match(/Edg\/(\d+\.[\d.]+)/);
@@ -29,6 +31,10 @@ export function getBrowserInfo(): BrowserInfo {
     name = "Firefox";
     const match = ua.match(/Firefox\/(\d+\.[\d.]+)/);
     version = match ? match[1] : "";
+  } else if (ua.includes("Opera") || ua.includes("OPR/")) {
+    name = "Opera";
+    const match = ua.match(/(?:Opera|OPR)\/(\d+\.[\d.]+)/);
+    version = match ? match[1] : "";
   } else if (ua.includes("Chrome/")) {
     name = "Chrome";
     const match = ua.match(/Chrome\/(\d+\.[\d.]+)/);
@@ -36,10 +42,6 @@ export function getBrowserInfo(): BrowserInfo {
   } else if (ua.includes("Safari/") && !ua.includes("Chrome")) {
     name = "Safari";
     const match = ua.match(/Version\/(\d+\.[\d.]+)/);
-    version = match ? match[1] : "";
-  } else if (ua.includes("Opera") || ua.includes("OPR/")) {
-    name = "Opera";
-    const match = ua.match(/(?:Opera|OPR)\/(\d+\.[\d.]+)/);
     version = match ? match[1] : "";
   }
 
