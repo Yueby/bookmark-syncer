@@ -54,4 +54,6 @@ export interface SyncLock {
  * 常量
  */
 export const SYNC_LOCK_KEY = "sync_lock";
-export const LOCK_TIMEOUT_MS = 60000; // 60 秒超时自动释放
+/** 锁超时：大书签集 + 慢 WebDAV 时单次同步可能超过 1 分钟，
+ * 60 秒会让下一次同步强抢锁并发执行，提到 5 分钟 */
+export const LOCK_TIMEOUT_MS = 300000; // 5 分钟超时自动释放

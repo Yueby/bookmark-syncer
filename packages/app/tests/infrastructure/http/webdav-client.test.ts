@@ -257,16 +257,15 @@ describe("WebDAVClient - 错误处理", () => {
     expect(files).toEqual([]);
   });
 
-  it("非 207 响应返回空数组", async () => {
+  it("非 207 的 5xx 响应抛出错误（避免空列表被缓存为有效状态）", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
       statusText: "Internal Server Error",
     });
     const client = createClient();
-    // 500 状态码会被捕获并返回空数组（console.error 后 return []）
-    const files = await client.listFiles("BookmarkSyncer");
-    expect(files).toEqual([]);
+    // 500 状态码应抛错，而不是返回空数组（否则上层会缓存“假空列表”）
+    await expect(client.listFiles("BookmarkSyncer")).rejects.toThrow("500");
   });
 
   it("putFile 失败抛出包含状态码的错误", async () => {

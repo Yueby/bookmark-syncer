@@ -273,7 +273,7 @@ export function SyncView() {
       username: username.trim(), 
       password: password.trim() 
     };
-    console.log('[SyncView] Getting sync config:', { url: config.url, username: config.username, hasPassword: !!config.password });
+    console.log('[SyncView] Getting sync config:', { url: config.url, hasPassword: !!config.password });
     return config;
   }
   

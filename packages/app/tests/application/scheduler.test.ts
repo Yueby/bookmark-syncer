@@ -186,11 +186,13 @@ describe("scheduler", () => {
       expect(browser.alarms.clear).toHaveBeenCalledWith(ALARM_NAME);
     });
 
-    it("重置恢复状态 alarm 调用 setIsRestoring(false)", async () => {
+    it("未知 alarm 名称时不做任何操作", async () => {
       registerAlarmListener();
       const listener = vi.mocked(browser.alarms.onAlarm.addListener).mock.calls[0][0] as Function;
       await listener({ name: "resetRestoring", scheduledTime: Date.now() });
-      expect(mocks.setIsRestoring).toHaveBeenCalledWith(false);
+      expect(mocks.executeAutoPull).not.toHaveBeenCalled();
+      expect(mocks.handleDebounceAlarm).not.toHaveBeenCalled();
+      expect(mocks.setIsRestoring).not.toHaveBeenCalled();
     });
   });
 });

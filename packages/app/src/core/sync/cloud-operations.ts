@@ -88,13 +88,15 @@ export async function getCloudBackupList(config: WebDAVConfig, forceRefresh = fa
   backupFiles.sort((a, b) => b.lastModified - a.lastModified);
 
   // 从文件名解析元数据（不下载文件内容）
+  // 注意：时间戳优先用服务器 lastModified（epoch，跨时区可比），
+  // 文件名中的时间戳按本地时区解析，跨时区设备间不可比，仅作展示兑底
   const backupList: CloudBackupFile[] = backupFiles.map((file) => {
     const parsed = fileManager.parseBackupFileName(file.name);
 
     return {
       name: file.name,
       path: file.path,
-      timestamp: parsed?.timestamp || file.lastModified,
+      timestamp: file.lastModified || parsed?.timestamp || 0,
       totalCount: parsed?.count,
       browser: parsed?.browser,
       browserVersion: undefined, // 不再提供

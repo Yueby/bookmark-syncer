@@ -257,9 +257,10 @@ describe("executeAutoPull", () => {
     expect(mocks.smartPull).not.toHaveBeenCalled();
   });
 
-  it("pull 错误时重置 restoring 状态", async () => {
+  it("pull 错误时不误清恢复状态（恢复状态只能由恢复操作自己管理）", async () => {
     mocks.smartPull.mockRejectedValueOnce(new Error("network error"));
     await executeAutoPull();
-    expect(mocks.setIsRestoring).toHaveBeenCalledWith(false);
+    // 错误被吞掉并记录，但不能清除并发的恢复操作设置的 isRestoring 标志
+    expect(mocks.setIsRestoring).not.toHaveBeenCalled();
   });
 });

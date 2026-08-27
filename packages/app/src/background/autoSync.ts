@@ -11,7 +11,7 @@
 
 // 重新导出所有 Application 层的公共 API
 export {
-    checkCloudOnStartup, initializeAutoSync, resetScheduledSync, startAutoSync, startScheduledSync, stopAutoSync, stopScheduledSync,
+    checkCloudOnStartup, clearStartupCheckFlag, initializeAutoSync, resetScheduledSync, startAutoSync, startScheduledSync, stopAutoSync, stopScheduledSync,
     updateScheduledSync
 } from "../application";
 

@@ -4,6 +4,7 @@
  */
 import { __resetMockStore } from "@src/__mocks__/webextension-polyfill";
 import { SyncLockManager } from "@src/core/sync/lock-manager";
+import { LOCK_TIMEOUT_MS } from "@src/core/sync/types";
 import { beforeEach, describe, expect, it } from "vitest";
 
 beforeEach(() => {
@@ -33,11 +34,11 @@ describe("SyncLockManager", () => {
     const manager = new SyncLockManager();
     await manager.acquire("auto-sync");
 
-    // 手动模拟锁超时：直接修改存储中的时间戳到 61 秒前
+    // 手动模拟锁超时：直接修改存储中的时间戳到超时之后
     const browser = (await import("webextension-polyfill")).default;
     const stored = await browser.storage.local.get("sync_lock");
     const lock = stored["sync_lock"] as { holder: string; timestamp: number; lockId: string };
-    lock.timestamp = Date.now() - 61000; // 61 秒前
+    lock.timestamp = Date.now() - LOCK_TIMEOUT_MS - 1000; // 超时后 1 秒
     await browser.storage.local.set({ sync_lock: lock });
 
     // 新实例应该可以获取
@@ -58,7 +59,7 @@ describe("SyncLockManager", () => {
     
     // 新实例获取锁（模拟另一次 auto-sync）
     // 先让旧锁过期
-    originalLock.timestamp = Date.now() - 61000;
+    originalLock.timestamp = Date.now() - LOCK_TIMEOUT_MS - 1000;
     await browser.storage.local.set({ sync_lock: originalLock });
 
     const manager2 = new SyncLockManager();

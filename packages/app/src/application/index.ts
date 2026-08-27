@@ -2,12 +2,62 @@
  * Application 层统一导出
  * 自动同步服务的公共 API
  */
+import browser from "webextension-polyfill";
 import { registerBookmarkListeners } from "./bookmark-monitor";
 import { registerAlarmListener } from "./scheduler";
+import { getWebDAVConfig } from "./state-manager";
 import { executeAutoPull } from "./sync-executor";
 
-// 防止重复启动的标志位
-let isStartupCheckScheduled = false;
+/**
+ * storage.session 中的"本次浏览器会话已执行启动检查"标志
+ * storage.session 生命周期与浏览器会话一致：
+ * - Service Worker 冷启动（被书签/闹钟事件唤醒）后标志仍在 → 不会重复拉取
+ * - 浏览器关闭后自动清除 → 下次启动会正常检查
+ */
+const STARTUP_CHECK_SESSION_KEY = "startupCloudCheckDone";
+
+// 无 storage.session 环境（旧版 Firefox）的降级标志
+let isStartupCheckDoneFallback = false;
+
+async function isStartupCheckDone(): Promise<boolean> {
+  const session = browser.storage.session ?? null;
+  if (session) {
+    try {
+      const result = await session.get(STARTUP_CHECK_SESSION_KEY);
+      return result[STARTUP_CHECK_SESSION_KEY] === true;
+    } catch {
+      // 读取失败视为未检查，宁可多检查一次
+      return false;
+    }
+  }
+  return isStartupCheckDoneFallback;
+}
+
+async function markStartupCheckDone(): Promise<void> {
+  const session = browser.storage.session ?? null;
+  if (session) {
+    try {
+      await session.set({ [STARTUP_CHECK_SESSION_KEY]: true });
+      return;
+    } catch {
+      // 写入失败时降级
+    }
+  }
+  isStartupCheckDoneFallback = true;
+}
+
+async function clearStartupCheckFlag(): Promise<void> {
+  const session = browser.storage.session ?? null;
+  if (session) {
+    try {
+      await session.remove(STARTUP_CHECK_SESSION_KEY);
+      return;
+    } catch {
+      // 忽略
+    }
+  }
+  isStartupCheckDoneFallback = false;
+}
 
 /**
  * 启动自动同步服务
@@ -16,21 +66,23 @@ let isStartupCheckScheduled = false;
 export function startAutoSync(): void {
   console.log("[AutoSync] Auto sync service started");
 
-  // 防止重复调用 checkCloudOnStartup（开发时会多次触发 onInstalled）
-  if (!isStartupCheckScheduled) {
-    isStartupCheckScheduled = true;
-    checkCloudOnStartup().finally(() => {
-      // 检查完成后重置标志，允许下次启动时再次检查
-      setTimeout(() => {
-        isStartupCheckScheduled = false;
-      }, 10000); // 10秒后重置
+  void (async () => {
+    // 使用 storage.session 去重：同一浏览器会话内（包括 SW 多次冷启动）
+    // 只执行一次启动检查，避免每次 SW 唤醒都触发拉取
+    if (await isStartupCheckDone()) {
+      console.log("[AutoSync] Startup check already done in this session, skipping");
+      return;
+    }
+    await markStartupCheckDone();
+
+    checkCloudOnStartup().catch((error) => {
+      console.error("[AutoSync] Startup check failed:", error);
     });
-  } else {
-    console.log(
-      "[AutoSync] Startup check already scheduled, skipping duplicate call",
-    );
-  }
+  })();
 }
+
+/** 清除启动检查标志（安装/更新后允许重新检查） */
+export { clearStartupCheckFlag };
 
 /**
  * 停止自动同步服务
@@ -49,6 +101,13 @@ export function stopAutoSync(): void {
  */
 export async function checkCloudOnStartup(): Promise<void> {
   console.log("[AutoSync] Checking cloud on startup (delayed 3s)...");
+
+  // 尊重自动同步开关：用户关闭自动同步时不做启动拉取
+  const { autoSyncEnabled } = await getWebDAVConfig();
+  if (!autoSyncEnabled) {
+    console.log("[AutoSync] Auto sync disabled, skipping startup check");
+    return;
+  }
 
   // 延迟 3 秒，等待扩展完全初始化，避免与 UI 同时执行 PROPFIND
   await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -70,4 +129,3 @@ export function initializeAutoSync(): void {
 
 // 导出定时同步相关函数
 export { resetScheduledSync, startScheduledSync, stopScheduledSync, updateScheduledSync } from "./scheduler";
-

@@ -9,7 +9,7 @@ import {
     POST_PULL_UPLOAD_SUPPRESSION_MS,
     SYNC_STATE_KEY,
 } from "./constants";
-import { getIsRestoring, getWebDAVConfig, setIsRestoring } from "./state-manager";
+import { getIsRestoring, getWebDAVConfig } from "./state-manager";
 
 /**
  * 执行上传同步 (Push)
@@ -58,7 +58,9 @@ export async function executeUpload(): Promise<void> {
       return;
     }
 
-    const cloudInfo = await getCloudInfo(config);
+    // 强制刷新：与 smartPush 的实时云端检查保持一致，
+    // 避免缓存窗口内自动上传被“云端有更新”阻断
+    const cloudInfo = await getCloudInfo(config, true);
     const cloudTime = cloudInfo.exists ? (cloudInfo.timestamp || 0) : 0;
 
     // 如果云端有更新，先增量拉取
@@ -87,7 +89,6 @@ export async function executeUpload(): Promise<void> {
     }
   } catch (error) {
     console.error("[SyncExecutor] Upload error:", error);
-    await setIsRestoring(false);
   }
 }
 
@@ -118,17 +119,15 @@ export async function executeAutoPull(): Promise<void> {
       return;
     }
 
-    console.log(
-      `[SyncExecutor] Using WebDAV config: url=${config.url}, username=${config.username}`,
-    );
+    console.log("[SyncExecutor] Using WebDAV config");
 
     // 获取本地同步记录
     const storageResult = await browser.storage.local.get(SYNC_STATE_KEY);
     const syncState = storageResult[SYNC_STATE_KEY] as SyncState | undefined;
     const lastSyncTime = syncState?.url === config.url ? syncState.time : 0;
 
-    // 获取云端信息
-    const cloudInfo = await getCloudInfo(config);
+    // 获取云端信息（强制刷新，避免旧缓存漏检远端更新）
+    const cloudInfo = await getCloudInfo(config, true);
 
     if (!cloudInfo.exists) {
       console.log("[SyncExecutor] No cloud backup found");
@@ -158,7 +157,5 @@ export async function executeAutoPull(): Promise<void> {
     }
   } catch (error) {
     console.error("[SyncExecutor] Pull error:", error);
-    // 发生错误时立即重置状态
-    await setIsRestoring(false);
   }
 }

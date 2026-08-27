@@ -153,7 +153,8 @@ export class FileManager {
     return {
       name: file.name,
       path: file.path,
-      timestamp: metadata?.timestamp ?? file.lastModified,
+      // 优先用服务器 lastModified（epoch，跨时区可比），文件名时间戳仅作兑底
+      timestamp: file.lastModified || metadata?.timestamp || 0,
       totalCount: metadata?.count,
       browser: metadata?.browser,
       browserVersion: undefined, // 文件名中不包含版本信息

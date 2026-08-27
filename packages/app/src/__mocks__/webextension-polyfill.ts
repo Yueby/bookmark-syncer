@@ -6,6 +6,9 @@ import { vi } from "vitest";
 
 const localStore: Record<string, unknown> = {};
 
+/** session storage 的有状态 mock 存储（与浏览器会话语义一致，需手动重置） */
+const sessionStore: Record<string, unknown> = {};
+
 const browser = {
   storage: {
     local: {
@@ -39,9 +42,33 @@ const browser = {
       }),
     },
     session: {
-      get: vi.fn(async () => ({})),
-      set: vi.fn(async () => {}),
-      remove: vi.fn(async () => {}),
+      get: vi.fn(async (keys?: string | string[] | Record<string, unknown>) => {
+        if (!keys) return { ...sessionStore };
+        if (typeof keys === "string") {
+          return { [keys]: sessionStore[keys] };
+        }
+        if (Array.isArray(keys)) {
+          const result: Record<string, unknown> = {};
+          for (const key of keys) {
+            result[key] = sessionStore[key];
+          }
+          return result;
+        }
+        const result: Record<string, unknown> = {};
+        for (const [key, defaultValue] of Object.entries(keys)) {
+          result[key] = sessionStore[key] ?? defaultValue;
+        }
+        return result;
+      }),
+      set: vi.fn(async (items: Record<string, unknown>) => {
+        Object.assign(sessionStore, items);
+      }),
+      remove: vi.fn(async (keys: string | string[]) => {
+        const keyArray = Array.isArray(keys) ? keys : [keys];
+        for (const key of keyArray) {
+          delete sessionStore[key];
+        }
+      }),
     },
   },
   bookmarks: {
@@ -79,6 +106,9 @@ const browser = {
 export function __resetMockStore() {
   for (const key of Object.keys(localStore)) {
     delete localStore[key];
+  }
+  for (const key of Object.keys(sessionStore)) {
+    delete sessionStore[key];
   }
 }
 

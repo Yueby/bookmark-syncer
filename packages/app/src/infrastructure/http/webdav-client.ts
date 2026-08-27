@@ -28,6 +28,12 @@ export interface IWebDAVClient {
  * WebDAV 客户端类（支持单例缓存）
  */
 export class WebDAVClient implements IWebDAVClient {
+  /** 常规请求超时（毫秒） */
+  private static readonly REQUEST_TIMEOUT_MS = 30_000;
+
+  /** 上传请求超时（毫秒）：大书签集的压缩备份可能较慢 */
+  private static readonly UPLOAD_TIMEOUT_MS = 120_000;
+
   private readonly config: WebDAVConfig;
 
   constructor(config: WebDAVConfig) {
@@ -56,8 +62,26 @@ export class WebDAVClient implements IWebDAVClient {
     return `${baseUrl}${cleanPath}`;
   }
 
+  /**
+   * 带超时的 fetch：防止挂起的服务器让同步无限期占锁
+   */
+  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`WebDAV 请求超时（${Math.round(timeoutMs / 1000)}秒）: ${init.method || "GET"} ${url}`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async testConnection(): Promise<boolean> {
-    const response = await fetch(this.normalizeUrl(""), {
+    const response = await this.fetchWithTimeout(this.normalizeUrl(""), {
       method: "PROPFIND",
       headers: {
         ...this.getAuthHeaders(),
@@ -65,12 +89,12 @@ export class WebDAVClient implements IWebDAVClient {
         Connection: "close",
       },
       credentials: "omit",
-    });
+    }, WebDAVClient.REQUEST_TIMEOUT_MS);
     return response.ok || response.status === 207;
   }
 
   async putFile(path: string, content: string): Promise<void> {
-    const response = await fetch(this.normalizeUrl(path), {
+    const response = await this.fetchWithTimeout(this.normalizeUrl(path), {
       method: "PUT",
       headers: {
         ...this.getAuthHeaders(),
@@ -79,7 +103,7 @@ export class WebDAVClient implements IWebDAVClient {
       },
       body: content,
       credentials: "omit",
-    });
+    }, WebDAVClient.UPLOAD_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(
@@ -94,7 +118,7 @@ export class WebDAVClient implements IWebDAVClient {
     console.log(`[WebDAV] Getting file: ${fileName}`);
 
     // 直接下载，不重试 409（409 说明有并发问题，应该在上层解决）
-    const response = await fetch(fullUrl, {
+    const response = await this.fetchWithTimeout(fullUrl, {
       method: "GET",
       headers: {
         ...this.getAuthHeaders(),
@@ -106,7 +130,7 @@ export class WebDAVClient implements IWebDAVClient {
       credentials: "omit",
       // 强制不使用缓存
       cache: "no-store",
-    });
+    }, WebDAVClient.REQUEST_TIMEOUT_MS);
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -142,14 +166,14 @@ export class WebDAVClient implements IWebDAVClient {
   }
 
   async createDirectory(path: string): Promise<void> {
-    const response = await fetch(this.normalizeUrl(path), {
+    const response = await this.fetchWithTimeout(this.normalizeUrl(path), {
       method: "MKCOL",
       headers: {
         ...this.getAuthHeaders(),
         Connection: "close",
       },
       credentials: "omit",
-    });
+    }, WebDAVClient.REQUEST_TIMEOUT_MS);
 
     if (!response.ok && response.status !== 405) {
       throw new Error(
@@ -160,7 +184,7 @@ export class WebDAVClient implements IWebDAVClient {
 
   async exists(path: string): Promise<boolean> {
     try {
-      const response = await fetch(this.normalizeUrl(path), {
+      const response = await this.fetchWithTimeout(this.normalizeUrl(path), {
         method: "PROPFIND",
         headers: {
           ...this.getAuthHeaders(),
@@ -168,7 +192,7 @@ export class WebDAVClient implements IWebDAVClient {
           Connection: "close",
         },
         credentials: "omit",
-      });
+      }, WebDAVClient.REQUEST_TIMEOUT_MS);
       return response.ok || response.status === 207;
     } catch {
       return false;
@@ -177,7 +201,7 @@ export class WebDAVClient implements IWebDAVClient {
 
   async listFiles(dirPath: string): Promise<WebDAVFile[]> {
     try {
-      const response = await fetch(this.normalizeUrl(dirPath), {
+      const response = await this.fetchWithTimeout(this.normalizeUrl(dirPath), {
         method: "PROPFIND",
         headers: {
           ...this.getAuthHeaders(),
@@ -185,7 +209,7 @@ export class WebDAVClient implements IWebDAVClient {
           Connection: "close",
         },
         credentials: "omit",
-      });
+      }, WebDAVClient.REQUEST_TIMEOUT_MS);
 
       if (response.status === 401 || response.status === 403) {
         console.warn("[WebDAV] Authentication/permission failed when listing files");
@@ -199,10 +223,12 @@ export class WebDAVClient implements IWebDAVClient {
       }
 
       if (!response.ok && response.status !== 207) {
+        // 5xx 等服务端错误必须抛错：
+        // 否则返回空数组会被上层缓存为“有效的空备份列表”，误导 UI 和自动拉取
         console.error(
           `[WebDAV] Failed to list files: ${response.status} ${response.statusText}`
         );
-        return [];
+        throw new Error(`WebDAV 列出文件失败（${response.status}）`);
       }
 
       const xml = await response.text();
@@ -334,14 +360,14 @@ export class WebDAVClient implements IWebDAVClient {
   }
 
   async deleteFile(path: string): Promise<void> {
-    const response = await fetch(this.normalizeUrl(path), {
+    const response = await this.fetchWithTimeout(this.normalizeUrl(path), {
       method: "DELETE",
       headers: {
         ...this.getAuthHeaders(),
         Connection: "close",
       },
       credentials: "omit",
-    });
+    }, WebDAVClient.REQUEST_TIMEOUT_MS);
 
     if (!response.ok && response.status !== 404) {
       throw new Error(
