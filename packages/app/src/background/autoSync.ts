@@ -17,5 +17,8 @@ export {
 
 // 在顶级作用域初始化（注册监听器）
 import { initializeAutoSync } from "../application";
+import { registerBackgroundOpHandler } from "./op-handler";
 
 initializeAutoSync();
+// 注册后台操作消息处理器（popup 触发的 WebDAV 连接/同步操作在此执行）
+registerBackgroundOpHandler();

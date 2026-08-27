@@ -97,6 +97,12 @@ const browser = {
   },
   runtime: {
     getManifest: vi.fn(() => ({ version: "1.0.0" })),
+    sendMessage: vi.fn(async () => undefined),
+    onMessage: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      hasListeners: vi.fn(() => false),
+    },
   },
 };
 

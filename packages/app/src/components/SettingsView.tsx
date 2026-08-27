@@ -3,9 +3,8 @@ import { ChevronLeft, ChevronRight, Clock, Info, Link2, Loader2, RefreshCw } fro
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { updateScheduledSync } from '../application'
-import { smartPush } from '../core/sync'
+import { smartPushInBackground, webdavTestInBackground } from '../application/background-ops'
 import { useStorage } from '../hooks/useStorage'
-import { getWebDAVClient } from '../infrastructure/http/webdav-client'
 import { Button } from './Button'
 import { Input } from './Input'
 import { Label } from './Label'
@@ -84,13 +83,15 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
         (savedUrlRef.current && savedUrlRef.current !== trimmedUrl) || 
         (savedUsernameRef.current && savedUsernameRef.current !== trimmedUsername);
       
-      // 测试连接
-      const client = getWebDAVClient({ 
-        url: trimmedUrl, 
-        username: trimmedUsername, 
-        password: password 
+      // 测试连接（在后台 Service Worker 中执行）
+      const testResult = await webdavTestInBackground({
+        url: trimmedUrl,
+        username: trimmedUsername,
+        password: password
       })
-      await client.testConnection()
+      if (!testResult.ok) {
+        throw new Error(testResult.error)
+      }
       
       // 更新存储的值
       if (trimmedUrl !== webdavUrl) setWebdavUrl(trimmedUrl);
@@ -104,9 +105,9 @@ function WebDAVPage({ onBack }: { onBack: () => void }) {
       if (configChanged && savedUrlRef.current) { // 确保之前有配置（不是首次设置）
         toast.info('检测到配置变更，正在创建备份...', { duration: 2000 });
         try {
-          const result = await smartPush(
-            { url: trimmedUrl, username: trimmedUsername, password: password }, 
-            'manual'
+          // 在后台 Service Worker 中执行自动备份，关闭面板不会中断
+          const result = await smartPushInBackground(
+            { url: trimmedUrl, username: trimmedUsername, password: password }
           );
           
           if (result.success) {

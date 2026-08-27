@@ -5,9 +5,15 @@ import { motion } from 'framer-motion'
 import { AlertTriangle, Cloud, Download, FilePlus, History, MoreHorizontal, RefreshCw, RotateCcw, ShieldCheck, Trash2, WifiOff } from 'lucide-react'
 import { clearLastBackupFileInfo, holdRestoringUntil, setIsRestoring } from '../application/state-manager'
 import { resetScheduledSync } from '../application'
+import {
+  restoreCloudBackupInBackground,
+  smartPullInBackground,
+  smartPushInBackground,
+  smartSyncInBackground,
+} from '../application/background-ops'
 import { snapshotManager, type Snapshot } from '../core/backup'
 import { bookmarkRepository, countBookmarks } from '../core/bookmark'
-import { getCloudBackupList, getCloudInfo, restoreFromCloudBackup, smartPull, smartPush, smartSync, type CloudBackupFile } from '../core/sync'
+import { getCloudBackupList, getCloudInfo, type CloudBackupFile } from '../core/sync'
 import { useStorage } from '../hooks/useStorage'
 import { cn } from '../infrastructure/utils/format'
 import { Button } from './Button'
@@ -162,13 +168,13 @@ export function SyncView() {
     setConfirmDrawerOpen(false)
     setDrawerOpen(false)
     
-    // 提示用户操作需要保持面板开启（同步运行在 popup 上下文中，关闭面板会中断）
+    // 提示用户操作在后台执行（运行于 Service Worker，关闭面板不会中断）
     const loadingToast = toast.loading('正在从云端恢复书签...', { 
-      description: '请保持面板开启，关闭面板会中断操作' 
+      description: '操作在后台进行，关闭面板后仍会继续完成' 
     })
     
     try {
-      const result = await restoreFromCloudBackup(getSyncConfig(), pendingRestoreCloudBackup.path, 'manual')
+      const result = await restoreCloudBackupInBackground(getSyncConfig(), pendingRestoreCloudBackup.path)
       
       toast.dismiss(loadingToast)
       
@@ -285,7 +291,8 @@ export function SyncView() {
       setMsg('正在分析...')
       
       try {
-          const result = await smartSync(getSyncConfig(), 'manual')
+          // 在后台 Service Worker 中执行，关闭面板不会中断
+          const result = await smartSyncInBackground(getSyncConfig())
           
           // 更新云端信息显示
           if (result.cloudInfo?.exists) {
@@ -335,7 +342,8 @@ export function SyncView() {
       setSyncStatus('syncing')
       setMsg('正在上传...')
       try {
-          const result = await smartPush(getSyncConfig(), 'manual')
+          // 在后台 Service Worker 中执行，关闭面板不会中断
+          const result = await smartPushInBackground(getSyncConfig())
           
           if (result.success) {
               setSyncStatus('success')
@@ -380,14 +388,14 @@ export function SyncView() {
       setSyncStatus('syncing') 
       setMsg(mode === 'overwrite' ? '正在恢复...' : '正在合并...')
       
-      // 提示用户操作需要保持面板开启（同步运行在 popup 上下文中，关闭面板会中断）
+      // 提示用户操作在后台执行（运行于 Service Worker，关闭面板不会中断）
       const loadingToast = toast.loading(
         mode === 'overwrite' ? '正在恢复书签...' : '正在合并书签...', 
-        { description: '请保持面板开启，关闭面板会中断操作' }
+        { description: '操作在后台进行，关闭面板后仍会继续完成' }
       )
       
       try {
-          const result = await smartPull(getSyncConfig(), 'manual', mode)
+          const result = await smartPullInBackground(getSyncConfig(), mode)
           
           toast.dismiss(loadingToast)
           
