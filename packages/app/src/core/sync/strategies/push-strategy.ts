@@ -2,9 +2,10 @@
  * 推送策略
  * 智能上传：检查内容差异，只有真正有变化时才上传
  */
-import { getBackupFileInterval, getLastBackupFileInfo, saveLastBackupFileInfo } from "../../../application/state-manager";
+import { getBackupFileInterval, getLastBackupFileInfo, getReadableBookmarkHtmlEnabled, saveLastBackupFileInfo } from "../../../application/state-manager";
 import { getBrowserInfo, isSameBrowser } from "../../../infrastructure/browser/info";
 import { getWebDAVClient } from "../../../infrastructure/http/webdav-client";
+import { createBookmarkHtml } from "../../../infrastructure/utils/bookmark-html";
 import { compressText } from "../../../infrastructure/utils/compression";
 import { CloudBackup } from "../../../types";
 import { snapshotManager } from "../../backup";
@@ -263,6 +264,16 @@ export async function smartPush(
     
     // 上传新文件（先传）
     await client.putFile(targetFilePath, fileContent);
+
+    if (await getReadableBookmarkHtmlEnabled()) {
+      const htmlPath = `${DIR}/bookmark.html`;
+      console.log(`[PushStrategy] Updating readable bookmark copy: ${htmlPath}`);
+      await client.putFile(
+        htmlPath,
+        createBookmarkHtml(backup.data, new Date(backup.metadata.timestamp)),
+        "text/html; charset=utf-8",
+      );
+    }
 
     // 上传成功后删除旧文件（后删，保证至少有一个有效备份存在）
     if (oldFileToDelete) {
