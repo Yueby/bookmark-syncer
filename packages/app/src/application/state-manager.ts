@@ -110,6 +110,14 @@ export async function getBackupFileInterval(): Promise<number> {
 }
 
 /**
+ * 是否同步可直接浏览的 HTML 书签副本
+ */
+export async function getReadableBookmarkHtmlEnabled(): Promise<boolean> {
+  const result = await browser.storage.local.get('readable_bookmark_html_enabled');
+  return result.readable_bookmark_html_enabled === true;
+}
+
+/**
  * 获取最后备份文件信息
  */
 export async function getLastBackupFileInfo(): Promise<LastBackupFileInfo | null> {

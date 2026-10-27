@@ -15,6 +15,7 @@ import { cacheManager } from "../../storage/cache-manager";
 import { queueManager } from "../../storage/queue-manager";
 import { acquireSyncLock, releaseSyncLock } from "../lock-manager";
 import { getLastSyncTime, setSyncState } from "../state-manager";
+import { refreshReadableBookmarkHtml } from "../readable-html";
 import type { SyncResult } from "../types";
 
 const DIR = STORAGE_CONSTANTS.BACKUP_DIR;
@@ -157,10 +158,11 @@ export async function smartPush(
                 url: config.url,
                 type: "skip_identical",
               });
+              const htmlUpdated = await refreshReadableBookmarkHtml(client, cloudData);
               return {
                 success: true,
                 action: "skipped",
-                message: "书签已同步，无需更新",
+                message: htmlUpdated ? "书签已同步，无需更新" : "书签已同步，但 HTML 副本更新失败，下次同步将重试",
               };
             }
           } else {
@@ -305,9 +307,15 @@ export async function smartPush(
       type: "upload",
     });
 
+    // The primary backup is committed before refreshing the optional browsing copy.
+    const htmlUpdated = await refreshReadableBookmarkHtml(client, backup);
     const elapsed = Date.now() - startTime;
     console.log(`[PushStrategy] Push completed in ${elapsed}ms`);
-    return { success: true, action: "uploaded", message: "上传成功" };
+    return {
+      success: true,
+      action: "uploaded",
+      message: htmlUpdated ? "上传成功" : "上传成功，但 HTML 副本更新失败，下次同步将重试",
+    };
   } catch (error) {
     const elapsed = Date.now() - startTime;
     const errorMessage = (error as Error).message || "上传失败";

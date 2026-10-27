@@ -16,7 +16,7 @@ export interface WebDAVFile {
  */
 export interface IWebDAVClient {
   testConnection(): Promise<boolean>;
-  putFile(path: string, content: string): Promise<void>;
+  putFile(path: string, content: string, contentType?: string): Promise<void>;
   getFile(path: string): Promise<string>;
   createDirectory(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
@@ -93,12 +93,12 @@ export class WebDAVClient implements IWebDAVClient {
     return response.ok || response.status === 207;
   }
 
-  async putFile(path: string, content: string): Promise<void> {
+  async putFile(path: string, content: string, contentType = "application/octet-stream"): Promise<void> {
     const response = await this.fetchWithTimeout(this.normalizeUrl(path), {
       method: "PUT",
       headers: {
         ...this.getAuthHeaders(),
-        "Content-Type": "application/octet-stream",
+        "Content-Type": contentType,
         Connection: "close",
       },
       body: content,

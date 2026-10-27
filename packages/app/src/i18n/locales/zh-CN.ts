@@ -168,6 +168,8 @@ export const dictionary: Record<string, string> = {
   "settings.sync.minute10": "10 分钟",
   "settings.sync.minute30": "30 分钟",
   "settings.sync.backupIntervalHint": "在此时间内的修改将覆盖同一个文件，避免产生过多备份",
+  "settings.sync.readableHtml": "同步可读 HTML 副本",
+  "settings.sync.readableHtmlDesc": "额外生成 bookmark.html，未安装插件的设备也可直接浏览",
 
   // ─── 关于页 ───
   "settings.about.title": "关于",

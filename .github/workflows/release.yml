@@ -25,7 +25,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "pnpm"
 
       - name: Install dependencies
@@ -53,9 +53,9 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           # 重命名 Chrome zip
-          mv apps/chrome-extension/chrome-extension.zip bookmark-syncer-chrome-v$VERSION.zip
+          mv apps/extension/.output/chrome-extension.zip bookmark-syncer-chrome-v$VERSION.zip
           # 重命名 Firefox xpi（web-ext 生成的文件名包含版本号）
-          XPI_FILE=$(ls apps/firefox-extension/*.xpi | head -n 1)
+          XPI_FILE=$(ls apps/extension/.output/*.xpi | head -n 1)
           if [ -f "$XPI_FILE" ]; then
             mv "$XPI_FILE" bookmark-syncer-firefox-v$VERSION.xpi
           fi

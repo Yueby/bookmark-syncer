@@ -55,6 +55,14 @@ describe("WebDAVClient - Headers 修复 (Issue #9)", () => {
     expect(headers["Content-Type"]).toBe("application/octet-stream");
   });
 
+  it("putFile 支持指定 HTML Content-Type", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 201 });
+    const client = createClient();
+    await client.putFile("bookmark.html", "<!doctype html>", "text/html; charset=utf-8");
+
+    expect(getLastFetchHeaders()["Content-Type"]).toBe("text/html; charset=utf-8");
+  });
+
   it("listFiles 请求头不包含 Content-Type", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

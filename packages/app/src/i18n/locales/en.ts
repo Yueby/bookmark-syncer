@@ -168,6 +168,8 @@ export const dictionary: Record<string, string> = {
   "settings.sync.minute10": "10 minutes",
   "settings.sync.minute30": "30 minutes",
   "settings.sync.backupIntervalHint": "Changes within this window overwrite the same file to avoid excess backups",
+  "settings.sync.readableHtml": "Sync readable HTML copy",
+  "settings.sync.readableHtmlDesc": "Also create bookmark.html for browsing on devices without the extension",
 
   // ─── About page ───
   "settings.about.title": "About",

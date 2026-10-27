@@ -101,7 +101,12 @@ dist
 # Mac OS
 .DS_Store
 
-# Extension build artifacts
+# Extension build artifacts and local test browser profiles
+.wxt/
+.output/
+.dev-profiles/
+web-ext-artifacts/
+# Legacy build outputs
 apps/chrome-extension/*.zip
 apps/chrome-extension/web-ext-artifacts/
 apps/firefox-extension/*.xpi

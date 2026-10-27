@@ -4,8 +4,7 @@ export default {
     require('../../packages/app/tailwind.config.cjs')
   ],
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./entrypoints/**/*.{html,js,ts,jsx,tsx}",
     "../../packages/app/src/**/*.{js,ts,jsx,tsx}"
   ],
   plugins: [],

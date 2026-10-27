@@ -18,6 +18,7 @@ const {
   mockParseBackupFileName,
   mockGetFileWithDedup,
   mockSmartPush,
+  mockRefreshHtml,
   mockSmartPull,
   mockBookmarkTree,
 } = vi.hoisted(() => {
@@ -52,6 +53,7 @@ const {
       action: "downloaded" as const,
       message: "同步完成",
     })),
+    mockRefreshHtml: vi.fn(async () => true),
     mockBookmarkTree: tree,
   };
 });
@@ -93,6 +95,10 @@ vi.mock("@src/core/sync/strategies/pull-strategy", () => ({
   smartPull: (...args: unknown[]) => mockSmartPull(...args),
 }));
 
+vi.mock("@src/core/sync/readable-html", () => ({
+  refreshReadableBookmarkHtml: mockRefreshHtml,
+}));
+
 import { smartSync } from "@src/core/sync/strategies/smart-sync-strategy";
 
 const testConfig = {
@@ -104,6 +110,7 @@ const testConfig = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockAcquire.mockResolvedValue(true);
+  mockRefreshHtml.mockResolvedValue(true);
   mockGetLatestBackupFile.mockResolvedValue(null);
   mockGetFileWithDedup.mockResolvedValue(null);
   mockCompareWithCloud.mockResolvedValue(false);
@@ -192,8 +199,24 @@ describe("smartSync - 分支决策", () => {
     const result = await smartSync(testConfig, "auto-sync");
 
     expect(result.action).toBe("skipped");
+    expect(mockRefreshHtml).toHaveBeenCalledWith(mockClient, expect.objectContaining({ data: mockBookmarkTree }));
+    expect(mockSetSyncState.mock.invocationCallOrder[0]).toBeLessThan(mockRefreshHtml.mock.invocationCallOrder[0]);
     expect(mockSmartPush).not.toHaveBeenCalled();
     expect(mockSmartPull).not.toHaveBeenCalled();
+  });
+
+  it("内容相同且 HTML 刷新失败时仍保留同步成功并提示重试", async () => {
+    mockGetLatestBackupFile.mockResolvedValueOnce("BookmarkSyncer/backup.json.gz");
+    mockGetFileWithDedup.mockResolvedValueOnce(JSON.stringify({
+      metadata: { timestamp: 1000, clientVersion: "1.0.0" }, data: mockBookmarkTree,
+    }));
+    mockCompareWithCloud.mockResolvedValueOnce(true);
+    mockRefreshHtml.mockResolvedValueOnce(false);
+    const result = await smartSync(testConfig, "auto-sync");
+    expect(result.success).toBe(true);
+    expect(result.action).toBe("skipped");
+    expect(result.message).toContain("HTML 副本更新失败");
+    expect(mockSmartPush).not.toHaveBeenCalled();
   });
 
   it("首次同步需要用户选择", async () => {

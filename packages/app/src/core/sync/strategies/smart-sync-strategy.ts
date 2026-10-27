@@ -10,6 +10,7 @@ import { fileManager } from "../../storage";
 import { queueManager } from "../../storage/queue-manager";
 import type { CloudInfo, WebDAVConfig } from "../../storage/types";
 import type { SmartSyncResult } from "../types";
+import { refreshReadableBookmarkHtml } from "../readable-html";
 import { smartPull } from "./pull-strategy";
 import { smartPush } from "./push-strategy";
 
@@ -104,10 +105,11 @@ export async function smartSync(
         url: config.url,
         type: "skip_identical",
       });
+      const htmlUpdated = await refreshReadableBookmarkHtml(client, cloudData);
       return {
         success: true,
         action: "skipped",
-        message: "书签已同步，无需操作",
+        message: htmlUpdated ? "书签已同步，无需操作" : "书签已同步，但 HTML 副本更新失败，下次同步将重试",
         cloudInfo,
       };
     }

@@ -13,6 +13,7 @@ import { queueManager } from "../../storage/queue-manager";
 import { acquireSyncLock, releaseSyncLock } from "../lock-manager";
 import { setSyncState } from "../state-manager";
 import type { SyncResult } from "../types";
+import { refreshReadableBookmarkHtml } from "../readable-html";
 
 /**
  * 智能下载：拉取云端数据并恢复到本地
@@ -118,9 +119,15 @@ export async function smartPull(
       type: "download",
     });
 
+    // A merge has not been uploaded yet; only publish the committed cloud snapshot.
+    const htmlUpdated = mode === "merge" || await refreshReadableBookmarkHtml(client, cloudData);
     const elapsed = Date.now() - startTime;
     console.log(`[PullStrategy] Pull completed in ${elapsed}ms`);
-    return { success: true, action: "downloaded", message: "同步完成" };
+    return {
+      success: true,
+      action: "downloaded",
+      message: htmlUpdated ? "同步完成" : "同步完成，但 HTML 副本更新失败，下次同步将重试",
+    };
   } catch (error) {
     const elapsed = Date.now() - startTime;
     const errorMessage = (error as Error).message || "恢复失败";

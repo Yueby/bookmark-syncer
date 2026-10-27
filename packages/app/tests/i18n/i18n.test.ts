@@ -117,6 +117,17 @@ describe("同步消息翻译", () => {
     expect(translateSyncMessage("en", "上传成功")).toBe("Upload succeeded");
   });
 
+  it("HTML 副本警告保留主同步成功语义", () => {
+    for (const message of [
+      "上传成功，但 HTML 副本更新失败，下次同步将重试",
+      "同步完成，但 HTML 副本更新失败，下次同步将重试",
+      "书签已同步，但 HTML 副本更新失败，下次同步将重试",
+    ]) {
+      expect(translateSyncMessage("en", message)).toContain("the HTML copy could not be updated");
+      expect(translateSyncMessage("zh-CN", message)).toBe(message);
+    }
+  });
+
   it("模板消息（自动备份前缀）正确转换", () => {
     expect(translateSyncMessage("en", "下载前自动备份 (手动, 覆盖)")).toBe(
       "Pre-download backup (manual, overwrite)",

@@ -186,6 +186,7 @@ function SyncSettingsPage({ onBack }: { onBack: () => void }) {
   const [scheduledSyncEnabled, setScheduledSyncEnabled] = useStorage('scheduled_sync_enabled', false)
   const [scheduledSyncInterval, setScheduledSyncInterval] = useStorage('scheduled_sync_interval', 30)
   const [backupFileInterval, setBackupFileInterval] = useStorage('backup_file_interval', 1)
+  const [readableBookmarkHtmlEnabled, setReadableBookmarkHtmlEnabled] = useStorage('readable_bookmark_html_enabled', false)
 
   // 监听定时同步配置变化，立即更新 Alarm
   useEffect(() => {
@@ -276,6 +277,23 @@ function SyncSettingsPage({ onBack }: { onBack: () => void }) {
           <p className="text-xs text-muted-foreground">
             {t('settings.sync.backupIntervalHint')}
           </p>
+        </div>
+
+        {/* 可读 HTML 副本 */}
+        <div className="flex items-center justify-between gap-4 p-4 rounded-xl bg-secondary/30">
+          <div>
+            <Label className="text-foreground">{t('settings.sync.readableHtml')}</Label>
+            <p className="text-xs text-muted-foreground">{t('settings.sync.readableHtmlDesc')}</p>
+          </div>
+          <label className="relative inline-flex shrink-0 items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={readableBookmarkHtmlEnabled}
+              onChange={(e) => setReadableBookmarkHtmlEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+          </label>
         </div>
       </div>
     </div>

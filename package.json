@@ -1,22 +1,28 @@
 {
   "name": "bookmark-syncer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A privacy-first bookmark sync extension based on WebDAV. Supports Chrome, Firefox, and Edge.",
   "private": true,
   "scripts": {
     "build": "pnpm build:chrome && pnpm build:firefox",
-    "build:chrome": "pnpm --filter @bookmark-syncer/chrome-extension build",
-    "build:firefox": "pnpm --filter @bookmark-syncer/firefox-extension build",
-    "dev:chrome": "pnpm --filter @bookmark-syncer/chrome-extension dev",
-    "dev:firefox": "pnpm --filter @bookmark-syncer/firefox-extension dev",
+    "build:chrome": "pnpm --filter @bookmark-syncer/extension build",
+    "build:firefox": "pnpm --filter @bookmark-syncer/extension build:firefox",
+    "dev": "pnpm dev:chrome",
+    "dev:chrome": "pnpm --filter @bookmark-syncer/extension dev",
+    "dev:firefox": "pnpm --filter @bookmark-syncer/extension dev:firefox",
+    "typecheck": "pnpm --filter @bookmark-syncer/extension compile",
+    "test": "pnpm --filter @bookmark-syncer/app test",
     "package": "pnpm package:chrome && pnpm sign:firefox",
-    "package:chrome": "pnpm build:chrome && cd apps/chrome-extension/dist && npx bestzip ../chrome-extension.zip * && cd ../../..",
-    "sign:firefox": "pnpm build:firefox && dotenv -- web-ext sign --channel=unlisted --source-dir=apps/firefox-extension/dist --artifacts-dir=apps/firefox-extension"
+    "package:chrome": "pnpm build:chrome && cd apps/extension/.output/chrome-mv3 && bestzip ../chrome-extension.zip *",
+    "sign:firefox": "pnpm build:firefox && dotenv -- web-ext sign --channel=unlisted --source-dir=apps/extension/.output/firefox-mv3 --artifacts-dir=apps/extension/.output"
   },
   "keywords": [],
   "author": "",
   "license": "AGPL-3.0",
   "packageManager": "pnpm@10.26.2",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "devDependencies": {
     "@types/node": "^25.0.10",
     "bestzip": "^2.2.1",

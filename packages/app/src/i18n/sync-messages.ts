@@ -33,6 +33,11 @@ const MESSAGE_TRANSLATIONS: Record<string, string> = {
   "上传成功": "Upload succeeded",
   "上传失败": "Upload failed",
 
+  // Optional readable HTML copy
+  "上传成功，但 HTML 副本更新失败，下次同步将重试": "Upload succeeded, but the HTML copy could not be updated; the next sync will retry",
+  "同步完成，但 HTML 副本更新失败，下次同步将重试": "Sync completed, but the HTML copy could not be updated; the next sync will retry",
+  "书签已同步，但 HTML 副本更新失败，下次同步将重试": "Bookmarks are in sync, but the HTML copy could not be updated; the next sync will retry",
+
   // smart-sync-strategy
   "书签已同步，无需操作": "Bookmarks already in sync, nothing to do",
   "需要选择同步方向": "Choose a sync direction",

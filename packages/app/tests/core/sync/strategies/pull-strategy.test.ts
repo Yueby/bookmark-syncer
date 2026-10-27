@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 使用 vi.hoisted 确保 mock 变量在 vi.mock 提升后仍可访问
 const {
   mockAcquire,
+  mockRefreshHtml,
   mockRelease,
   mockSetSyncState,
   mockClient,
@@ -20,6 +21,7 @@ const {
   mockGetFileWithDedup,
 } = vi.hoisted(() => ({
   mockAcquire: vi.fn(async () => true),
+  mockRefreshHtml: vi.fn(async () => true),
   mockRelease: vi.fn(async () => {}),
   mockSetSyncState: vi.fn(async () => {}),
   mockClient: {
@@ -89,6 +91,10 @@ vi.mock("@src/core/sync/state-manager", () => ({
   setSyncState: mockSetSyncState,
 }));
 
+vi.mock("@src/core/sync/readable-html", () => ({
+  refreshReadableBookmarkHtml: mockRefreshHtml,
+}));
+
 import { smartPull } from "@src/core/sync/strategies/pull-strategy";
 
 const testConfig = {
@@ -100,6 +106,7 @@ const testConfig = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockAcquire.mockResolvedValue(true);
+  mockRefreshHtml.mockResolvedValue(true);
   mockGetLatestBackupFile.mockResolvedValue("BookmarkSyncer/backup.json.gz");
   mockGetFileWithDedup.mockResolvedValue(
     JSON.stringify({
@@ -123,6 +130,10 @@ describe("smartPull - 基本流程", () => {
     expect(result.action).toBe("downloaded");
     expect(mockRestoreFromBackup).toHaveBeenCalledTimes(1);
     expect(mockMergeFromBackup).not.toHaveBeenCalled();
+    expect(mockRefreshHtml).toHaveBeenCalledWith(mockClient, expect.objectContaining({
+      data: [{ title: "Cloud Bookmark", url: "https://cloud.com" }],
+    }));
+    expect(mockSetSyncState.mock.invocationCallOrder[0]).toBeLessThan(mockRefreshHtml.mock.invocationCallOrder[0]);
   });
 
   it("合并拉取（merge 模式）", async () => {
@@ -132,6 +143,17 @@ describe("smartPull - 基本流程", () => {
     expect(result.action).toBe("downloaded");
     expect(mockMergeFromBackup).toHaveBeenCalledTimes(1);
     expect(mockRestoreFromBackup).not.toHaveBeenCalled();
+    expect(mockRefreshHtml).not.toHaveBeenCalled();
+  });
+
+  it("HTML 失败不影响已完成的恢复与同步状态", async () => {
+    mockRefreshHtml.mockResolvedValueOnce(false);
+    const result = await smartPull(testConfig, "manual", "overwrite");
+    expect(result.success).toBe(true);
+    expect(result.action).toBe("downloaded");
+    expect(result.message).toContain("HTML 副本更新失败");
+    expect(mockRestoreFromBackup).toHaveBeenCalled();
+    expect(mockSetSyncState).toHaveBeenCalled();
   });
 
   it("云端无备份时返回错误", async () => {

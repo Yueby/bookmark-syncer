@@ -12,11 +12,13 @@ const {
   mockGetLastSyncTime,
   mockSetSyncState,
   mockGetBackupFileInterval,
+  mockGetReadableBookmarkHtmlEnabled,
   mockGetLastBackupFileInfo,
   mockSaveLastBackupFileInfo,
   mockGetBrowserInfo,
   mockIsSameBrowser,
   mockCompressText,
+  mockCreateBookmarkHtml,
   mockGetTree,
   mockCreateCloudBackup,
   mockCompareWithCloud,
@@ -48,11 +50,13 @@ const {
     mockGetLastSyncTime: vi.fn(async () => 0),
     mockSetSyncState: vi.fn(async () => {}),
     mockGetBackupFileInterval: vi.fn(async () => 1),
+    mockGetReadableBookmarkHtmlEnabled: vi.fn(async () => false),
     mockGetLastBackupFileInfo: vi.fn(async () => null),
     mockSaveLastBackupFileInfo: vi.fn(async () => {}),
     mockGetBrowserInfo: vi.fn(() => ({ name: "Chrome", version: "120.0" })),
     mockIsSameBrowser: vi.fn(() => false),
     mockCompressText: vi.fn(async (text: string) => `compressed_${text.length}`),
+    mockCreateBookmarkHtml: vi.fn(() => "<!doctype html><title>Bookmarks</title>"),
     mockGetTree: vi.fn(async () => tree),
     mockCreateCloudBackup: vi.fn(async () => ({
       metadata: { timestamp: Date.now(), clientVersion: "1.0.0" },
@@ -74,6 +78,7 @@ const {
 // --- Mock 模块 ---
 vi.mock("@src/application/state-manager", () => ({
   getBackupFileInterval: mockGetBackupFileInterval,
+  getReadableBookmarkHtmlEnabled: mockGetReadableBookmarkHtmlEnabled,
   getLastBackupFileInfo: mockGetLastBackupFileInfo,
   saveLastBackupFileInfo: mockSaveLastBackupFileInfo,
 }));
@@ -89,6 +94,10 @@ vi.mock("@src/infrastructure/http/webdav-client", () => ({
 
 vi.mock("@src/infrastructure/utils/compression", () => ({
   compressText: mockCompressText,
+}));
+
+vi.mock("@src/infrastructure/utils/bookmark-html", () => ({
+  createBookmarkHtml: mockCreateBookmarkHtml,
 }));
 
 vi.mock("@src/core/bookmark", () => ({
@@ -151,6 +160,7 @@ beforeEach(() => {
   mockAcquire.mockResolvedValue(true);
   mockGetLatestBackupFile.mockResolvedValue(null);
   mockGetLastBackupFileInfo.mockResolvedValue(null);
+  mockGetReadableBookmarkHtmlEnabled.mockResolvedValue(false);
   mockGetFileWithDedup.mockResolvedValue(null);
   mockCompareWithCloud.mockResolvedValue(false);
   mockCountBookmarks.mockReturnValue(1);
@@ -170,6 +180,21 @@ describe("smartPush - 基本流程", () => {
     expect(result.success).toBe(true);
     expect(result.action).toBe("uploaded");
     expect(mockClient.putFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("启用可读副本时额外上传 bookmark.html", async () => {
+    mockGetReadableBookmarkHtmlEnabled.mockResolvedValueOnce(true);
+
+    const result = await smartPush(testConfig, "manual");
+
+    expect(result.success).toBe(true);
+    expect(mockClient.putFile).toHaveBeenCalledTimes(2);
+    expect(mockClient.putFile).toHaveBeenNthCalledWith(
+      2,
+      "BookmarkSyncer/bookmark.html",
+      "<!doctype html><title>Bookmarks</title>",
+      "text/html; charset=utf-8",
+    );
   });
 
   it("内容相同时跳过上传", async () => {
@@ -200,6 +225,57 @@ describe("smartPush - 基本流程", () => {
     const result = await smartPush(testConfig, "manual");
     expect(result.success).toBe(false);
     expect(result.action).toBe("error");
+  });
+});
+
+describe("smartPush - HTML 副本可靠性", () => {
+  it("HTML 上传失败仍提交主备份状态并删除被替换文件", async () => {
+    mockGetReadableBookmarkHtmlEnabled.mockResolvedValue(true);
+    mockGetLastBackupFileInfo.mockResolvedValueOnce({
+      fileName: "old.json.gz",
+      filePath: "BookmarkSyncer/old.json.gz",
+      createdAt: Date.now(),
+      revisionNumber: 1,
+    });
+    mockClient.putFile.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("HTML rejected"));
+
+    const result = await smartPush(testConfig, "manual");
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe("uploaded");
+    expect(result.message).toContain("HTML 副本更新失败");
+    expect(mockClient.deleteFile).toHaveBeenCalledWith("BookmarkSyncer/old.json.gz");
+    expect(mockSaveLastBackupFileInfo).toHaveBeenCalled();
+    expect(mockClearBackupListCache).toHaveBeenCalled();
+    expect(mockSetSyncState).toHaveBeenCalledWith(expect.objectContaining({ type: "upload" }));
+    expect(mockSetSyncState.mock.invocationCallOrder[0]).toBeLessThan(mockClient.putFile.mock.invocationCallOrder[1]);
+  });
+
+  it("内容相同仍刷新 HTML，不重新上传主备份", async () => {
+    mockGetReadableBookmarkHtmlEnabled.mockResolvedValue(true);
+    const cloud = { metadata: { timestamp: 1000, clientVersion: "1.0.0" }, data: mockBookmarkTree };
+    mockGetLatestBackupFile.mockResolvedValueOnce("BookmarkSyncer/backup.json.gz");
+    mockGetFileWithDedup.mockResolvedValueOnce(JSON.stringify(cloud));
+    mockGetLastSyncTime.mockResolvedValueOnce(2000);
+    mockCompareWithCloud.mockResolvedValueOnce(true);
+
+    const result = await smartPush(testConfig, "auto-sync");
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe("skipped");
+    expect(mockClient.putFile).toHaveBeenCalledTimes(1);
+    expect(mockClient.putFile).toHaveBeenCalledWith("BookmarkSyncer/bookmark.html", expect.any(String), "text/html; charset=utf-8");
+    expect(mockCreateBookmarkHtml).toHaveBeenCalledWith(cloud.data, new Date(1000));
+    expect(mockCreateCloudBackup).not.toHaveBeenCalled();
+  });
+
+  it("主备份上传失败时不发布 HTML", async () => {
+    mockGetReadableBookmarkHtmlEnabled.mockResolvedValue(true);
+    mockClient.putFile.mockRejectedValueOnce(new Error("backup rejected"));
+    const result = await smartPush(testConfig, "manual");
+    expect(result.success).toBe(false);
+    expect(mockClient.putFile).toHaveBeenCalledTimes(1);
+    expect(mockCreateBookmarkHtml).not.toHaveBeenCalled();
   });
 });
 
